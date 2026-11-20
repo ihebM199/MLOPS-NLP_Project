@@ -1,0 +1,109 @@
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.ipynb_checkpoints/
+*.log
+
+# ---------------------------------------------------------------------------
+# ML / NLP artefacts
+# ---------------------------------------------------------------------------
+exigence_pdf/models/
+exigence_pdf/archive/
+exigence_pdf/mlruns/
+exigence_pdf/mlartifacts/
+exigence_pdf/reports/
+exigence_pdf/data/raw/
+exigence_pdf/data/processed/
+exigence_pdf/data/external/
+
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.bin
+*.safetensors
+*.h5
+*.keras
+*.pb
+
+# DVC
+exigence_pdf/.dvc/cache/
+exigence_pdf/.dvc/tmp/
+exigence_pdf/dvc-remote/
+
+# ---------------------------------------------------------------------------
+# Secrets and credentials
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+kaggle.json
+access_token
+client_secret*.json
+
+# ---------------------------------------------------------------------------
+# Jupyter / notebooks
+# ---------------------------------------------------------------------------
+*.nbconvert.ipynb
+
+# ---------------------------------------------------------------------------
+# Node / frontend
+# ---------------------------------------------------------------------------
+exigence_pdf/frontend/node_modules/
+exigence_pdf/frontend/dist/
+exigence_pdf/frontend/.vite/
+node_modules/
+dist/
+.vite/
+npm-debug.log*
+yarn*.log
+pnpm-debug.log*
+
+# ---------------------------------------------------------------------------
+# IDE / editor
+# ---------------------------------------------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---------------------------------------------------------------------------
+# Operating systems
+# ---------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# LaTeX
+# ---------------------------------------------------------------------------
+exigence_pdf/rapport/*.aux
+exigence_pdf/rapport/*.log
+exigence_pdf/rapport/*.out
+exigence_pdf/rapport/*.toc
+exigence_pdf/rapport/*.bbl
+exigence_pdf/rapport/*.blg
+exigence_pdf/rapport/*.synctex.gz
+exigence_pdf/rapport/*.fls
+exigence_pdf/rapport/*.fdb_latexmk
