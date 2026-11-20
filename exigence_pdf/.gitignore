@@ -29,6 +29,7 @@ kaggle.json
 access_token
 client_secret*.json
 *.key
+*.exe
 
 # ---------------------------------------------------------------------------
 # Python
