@@ -1,0 +1,105 @@
+# =============================================================================
+# Study design -- baseline vs advanced model + ablations.
+#
+# Consumed by `scripts/run_experiments.py`, which runs one `train` per entry
+# with the *same* data, seed and schedule so the runs are directly comparable
+# in MLflow (same experiment, tags `axis=comparison` / `axis=ablation`).
+#
+# Override keys use the `section__field` syntax of
+# `TrainConfig.with_overrides` (e.g. `train__mode`).
+# =============================================================================
+
+common:
+  seed: 42
+  epochs: 30
+  batch_size: 32
+  image_size: 224
+
+# ---------------------------------------------------------------------------
+# Mandatory comparison (Phase 3.2): 4 runs, identical data/seed/schedule.
+# NOTE: the delivered checkpoint is convnext_tiny, so R1 ("spatial stream
+# alone") is the honest baseline for *this* backbone.  Re-run with
+# `train__backbone: efficientnetv2_rw_s` if the original EfficientNetV2
+# baseline is required; the code supports it, the weights are not provided.
+# ---------------------------------------------------------------------------
+runs:
+  - id: R1
+    name: R1_spatial_only
+    axis: comparison
+    description: Spatial stream only (no FFT branch) -- baseline.
+    overrides:
+      train__mode: spatial_only
+      train__run_name: R1_spatial_only
+
+  - id: R2
+    name: R2_freq_only
+    axis: comparison
+    description: Frequency stream only.
+    overrides:
+      train__mode: freq_only
+      train__run_name: R2_freq_only
+
+  - id: R3
+    name: R3_concat_no_gate
+    axis: comparison
+    description: Concatenation of both streams, no adaptive gate.
+    overrides:
+      train__mode: concat_no_gate
+      train__run_name: R3_concat_no_gate
+
+  - id: R4
+    name: R4_fusion
+    axis: comparison
+    description: Adaptive fusion (final model).
+    overrides:
+      train__mode: fusion
+      train__run_name: R4_fusion
+
+# ---------------------------------------------------------------------------
+# Axis-1 ablations (Phase 3.3): every technique = one tracked run.
+# ---------------------------------------------------------------------------
+ablations:
+  - id: A1
+    name: A1_baseline_augmentation
+    axis: ablation
+    description: No RandAugment / MixUp / CutMix (source-notebook recipe).
+    overrides:
+      data__advanced_augmentation: false
+      train__run_name: A1_baseline_augmentation
+
+  - id: A2
+    name: A2_focal_loss
+    axis: ablation
+    description: Focal Loss instead of BCE + label smoothing.
+    overrides:
+      train__focal_loss: true
+      train__run_name: A2_focal_loss
+
+  - id: A3
+    name: A3_frozen_then_unfreeze
+    axis: ablation
+    description: Linear probe for 3 epochs, then gradual unfreeze.
+    overrides:
+      train__freeze_backbone_epochs: 3
+      train__run_name: A3_frozen_then_unfreeze
+
+  - id: A4
+    name: A4_no_amp
+    axis: ablation
+    description: FP32 training (AMP disabled) -- accuracy reference.
+    overrides:
+      train__use_amp: false
+      train__run_name: A4_no_amp
+
+# ---------------------------------------------------------------------------
+# Optional cross-dataset evaluation (Phase 3.2): fill data/external first.
+# ---------------------------------------------------------------------------
+cross_dataset:
+  enabled: false
+  max_per_class: 500
+  sources:
+    - celeb_df_v2
+    - ff_c23
+    - celeb_a
+    - lfw
+  # FFHQ is deliberately excluded: the 140k reals already come from FFHQ.

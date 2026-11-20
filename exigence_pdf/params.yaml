@@ -1,0 +1,91 @@
+# =============================================================================
+# Deepfake Adaptive Fusion -- single source of truth for every stage.
+#
+# Read by:
+#   src/data/prepare.py      python -m src.data.prepare
+#   src/models/train.py      python -m src.models.train
+#   src/models/evaluate.py   python -m src.models.evaluate
+#   src/models/onnx_export.py python -m src.models.onnx_export
+#   backend/app/settings.py  (threshold / model path / metadata)
+#
+# The default backbone is `convnext_tiny` because that is the architecture of
+# the provided checkpoint (models/AdaptiveFusion_best_model.pth, 768-d
+# projection). `load_checkpoint` still auto-detects other backbones
+# (efficientnetv2_rw_s, regnety_*, ...) -- see docs/DECISIONS.md.
+# =============================================================================
+
+data:
+  dataset: xhlulu/140k-real-and-fake-faces
+  dataset_subdir: real_vs_fake/real-vs-fake
+  image_size: 224
+  # Deterministic per-class subsampling of the official splits (Colab budget).
+  # Set to null to use the full split.
+  train_per_class: 10000
+  valid_per_class: 2000
+  test_per_class: 5000
+  num_workers: 2
+  seed: 42
+  # Axis 1 -- advanced augmentation (train split only)
+  advanced_augmentation: true
+  randaugment_num_ops: 2
+  randaugment_magnitude: 7
+  mixup_alpha: 0.2
+  cutmix_alpha: 1.0
+  mix_prob: 0.5
+
+train:
+  mode: fusion            # fusion | spatial_only | freq_only | concat_no_gate
+  backbone: convnext_tiny
+  pretrained: true
+  epochs: 30
+  batch_size: 32
+  patience: 5
+  weight_decay: 0.05
+  # Differential learning rates (recipe kept from the source notebook)
+  lr_backbone: 0.00001
+  lr_fusion: 0.0001
+  lr_classifier: 0.0002
+  label_smoothing: 0.05
+  grad_clip: 1.0
+  learn_residual_scale: true
+  use_amp: true
+  # Loss / fine-tuning ablations (see experiments.yaml)
+  focal_loss: false
+  focal_gamma: 2.0
+  focal_alpha: 0.25
+  freeze_backbone_epochs: 0   # > 0 => linear probe, then gradual unfreeze
+  resume: false
+  seed: 42
+  deterministic: false
+  run_name: R4_fusion
+
+eval:
+  split: test
+  threshold: 0.5            # P(fake) >= threshold -> FAKE
+  calibration: true
+  robustness: true
+  jpeg_qualities: [75, 50, 30]
+  blur_sigmas: [1.0, 2.0]
+  resize_factors: [0.5, 0.25]
+  max_robustness_samples: 400
+  cross_dataset: false       # enable when data/external is populated
+  external_max_per_class: 500
+
+export:
+  opset: 17
+  path: models/deepfake_fusion.onnx
+  fp16: true
+  int8: true
+  calibration_samples: 200
+  parity_images: 64
+  parity_tolerance: 0.001
+
+tracking:
+  enabled: true
+  tracking_uri: ""           # empty -> sqlite:///mlruns/mlflow.db
+  experiment: deepfake-adaptive-fusion
+  registered_model: deepfake-adaptive-fusion
+  register: false            # dvc/CI keeps this false; enable for the final run
+  alias: staging
+  log_artifacts: true
+  log_system_metrics: false

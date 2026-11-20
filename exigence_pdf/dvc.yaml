@@ -1,0 +1,138 @@
+# =============================================================================
+# DVC pipeline -- prepare -> train -> evaluate -> export_onnx
+#
+#   dvc repro                    full run (needs Kaggle credentials + GPU)
+#   dvc repro --force            ignore the run cache
+#   dvc metrics show             accuracy / F1 / AUC / EER of the last run
+#   dvc plots show               training curves (reports/figures)
+#
+# The model directory is *not* tracked with `dvc add`: the checkpoint is a
+# pipeline output declared below, so DVC caches it automatically and
+# `dvc pull` restores it.  See docs/DECISIONS.md.
+# =============================================================================
+
+stages:
+  prepare:
+    desc: Download the 140k archive (Kaggle) and extract a deterministic subset.
+    cmd: python -m src.data.prepare --config params.yaml
+    deps:
+      - src/config.py
+      - src/data/prepare.py
+      - src/data/dataset.py
+      - src/utils/paths.py
+    params:
+      - data.dataset
+      - data.dataset_subdir
+      - data.image_size
+      - data.train_per_class
+      - data.valid_per_class
+      - data.test_per_class
+      - data.seed
+    outs:
+      - data/processed
+
+  train:
+    desc: Train the adaptive-fusion detector (or a baseline via train.mode).
+    cmd: python -m src.models.train --config params.yaml
+    deps:
+      - src/config.py
+      - src/tracking.py
+      - src/data
+      - src/models/architecture.py
+      - src/models/augment.py
+      - src/models/losses.py
+      - src/models/metrics.py
+      - src/models/train.py
+      - src/utils
+      - data/processed
+    params:
+      - data.image_size
+      - data.train_per_class
+      - data.valid_per_class
+      - data.seed
+      - data.advanced_augmentation
+      - data.mixup_alpha
+      - data.cutmix_alpha
+      - data.mix_prob
+      - train.mode
+      - train.backbone
+      - train.epochs
+      - train.batch_size
+      - train.patience
+      - train.weight_decay
+      - train.lr_backbone
+      - train.lr_fusion
+      - train.lr_classifier
+      - train.label_smoothing
+      - train.focal_loss
+      - train.freeze_backbone_epochs
+      - train.run_name
+    outs:
+      - models/AdaptiveFusion_best_model.pth
+      - models/model_config.json
+      - models/training_history.csv:
+          cache: false
+    metrics:
+      - reports/train_summary_fusion.json:
+          cache: false
+    plots:
+      - reports/figures/training_curves_fusion.png:
+          cache: false
+
+  evaluate:
+    desc: Metrics, calibration, robustness, cross-dataset and figures.
+    cmd: python -m src.models.evaluate --config params.yaml
+    deps:
+      - src/config.py
+      - src/tracking.py
+      - src/data
+      - src/models/architecture.py
+      - src/models/evaluate.py
+      - src/models/metrics.py
+      - src/models/benchmark.py
+      - src/utils
+      - models/AdaptiveFusion_best_model.pth
+      - data/processed
+    params:
+      - data.image_size
+      - data.test_per_class
+      - eval.threshold
+      - eval.calibration
+      - eval.robustness
+      - eval.max_robustness_samples
+      - eval.cross_dataset
+      - eval.external_max_per_class
+    outs:
+      - reports/figures:
+          cache: false
+      - reports/threshold_calibration.json:
+          cache: false
+    metrics:
+      - reports/metrics.json:
+          cache: false
+
+  export_onnx:
+    desc: Export FP32/FP16/INT8 ONNX and check PyTorch <-> ONNX parity.
+    cmd: python -m src.models.onnx_export --config params.yaml
+    deps:
+      - src/config.py
+      - src/models/architecture.py
+      - src/models/onnx_export.py
+      - src/utils
+      - models/AdaptiveFusion_best_model.pth
+    params:
+      - export.opset
+      - export.path
+      - export.fp16
+      - export.int8
+      - export.parity_images
+      - export.parity_tolerance
+    outs:
+      - models/deepfake_fusion.onnx
+      - models/deepfake_fusion_fp16.onnx
+      - models/deepfake_fusion_int8.onnx
+    metrics:
+      - reports/onnx_parity.json:
+          cache: false
+      - reports/onnx_variants.json:
+          cache: false

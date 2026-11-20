@@ -1,0 +1,32 @@
+[tool.black]
+line-length = 110
+target-version = ["py310", "py311"]
+extend-exclude = '''
+/(
+    \.venv
+  | archive
+  | notebooks/_legacy
+  | frontend
+)/
+'''
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "backend/tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: long-running test (real PyTorch/ONNX weights required)",
+    "gpu: requires a CUDA device",
+    "data: requires the downloaded dataset",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.coverage.run]
+source = ["src", "backend/app"]
+branch = true
+
+[tool.isort]
+profile = "black"
+line_length = 110
+known_first_party = ["src", "backend"]
