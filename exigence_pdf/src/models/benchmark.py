@@ -61,6 +61,7 @@ def latency_benchmark(
     import torch
 
     model.eval()
+    device_type = getattr(device, "type", str(device))
     rows = []
     for batch_size in batch_sizes:
         x = torch.randn(batch_size, 3, image_size, image_size, device=device)
@@ -82,7 +83,7 @@ def latency_benchmark(
                 "latency_ms_p95": round(float(np.percentile(timings, 95)), 2),
                 "throughput_img_s": round(batch_size * 1000 / median, 1),
                 "peak_gpu_mem_mb": round(torch.cuda.max_memory_allocated() / 2**20, 1)
-                if device.type == "cuda"
+                if device_type == "cuda"
                 else None,
             }
         )

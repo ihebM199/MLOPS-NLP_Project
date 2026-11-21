@@ -34,9 +34,9 @@ def plot_training_history(history: Mapping[str, Sequence[float]], path: Optional
     epochs = list(history.get("epoch", range(1, len(history.get("loss", [])) + 1)))
     panels = [
         ("loss", "val_loss", "Loss"),
-        ("acc", "val_acc", "Accuracy"),
+        ("acc", "val_accuracy", "Accuracy"),
         ("f1", "val_f1", "F1 score"),
-        ("bal_acc", "val_bal_acc", "Balanced accuracy"),
+        ("bal_acc", "val_balanced_accuracy", "Balanced accuracy"),
     ]
     fig, axes = plt.subplots(2, 2, figsize=(12, 8))
     val_f1 = list(history.get("val_f1", []))

@@ -1,0 +1,77 @@
+# ---------------------------------------------------------------------------
+# One command starts the whole stack:
+#   docker compose up --build
+#
+#   frontend -> http://localhost:3000
+#   backend  -> http://localhost:8000/docs
+#   MLflow   -> http://localhost:5000
+#
+# Models are mounted read-only (never committed, fetched with `dvc pull`).
+# ---------------------------------------------------------------------------
+name: deepfake-adaptive-fusion
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    image: deepfake-adaptive-fusion-backend:latest
+    environment:
+      MODEL_PATH: /app/models/deepfake_fusion.onnx
+      PYTORCH_CHECKPOINT_PATH: /app/models/AdaptiveFusion_best_model.pth
+      MODEL_CONFIG_PATH: /app/models/model_config.json
+      METRICS_PATH: /app/reports/metrics.json
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+      DECISION_THRESHOLD: ${DECISION_THRESHOLD:-0.5}
+      ENABLE_GRADCAM: ${ENABLE_GRADCAM:-true}
+      TORCH_DEVICE: ${TORCH_DEVICE:-cpu}
+      FRONTEND_DIST: /app/frontend_dist
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ./models:/app/models:ro
+      - ./reports:/app/reports:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      mlflow:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: /api
+    image: deepfake-adaptive-fusion-frontend:latest
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.17.2
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    restart: unless-stopped
+
+volumes:
+  mlflow-data:

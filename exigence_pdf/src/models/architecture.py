@@ -169,7 +169,7 @@ class AdaptiveFusionDetector(nn.Module):
     def active_parameters(self) -> int:
         """Parameters actually used by the current mode (unused modules excluded)."""
         modules: Sequence[nn.Module] = [self.spatial_projection, self.classifier]
-        if self.mode in ("fusion", "spatial_only"):
+        if self.mode in ("fusion", "spatial_only", "concat_no_gate"):
             modules.append(self.spatial_net)
         if self.mode in ("fusion", "freq_only", "concat_no_gate"):
             modules += [self.freq_net, self.frequency_projection]

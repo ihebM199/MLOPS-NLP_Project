@@ -274,12 +274,20 @@ def load_model_for_evaluation(
         )
     config_path = Path(cfg.model_dir) / "model_config.json"
     meta_backbone = None
+    meta_mode = cfg.train.mode
     if config_path.exists():
         try:
-            meta_backbone = json.loads(config_path.read_text("utf-8")).get("backbone")
+            saved = json.loads(config_path.read_text("utf-8"))
+            meta_backbone = saved.get("backbone")
+            meta_mode = saved.get("mode") or meta_mode
         except json.JSONDecodeError:
-            meta_backbone = None
-    return load_checkpoint(path, backbone=meta_backbone or cfg.train.backbone, mode="fusion", device=device)
+            pass
+    return load_checkpoint(
+        path,
+        backbone=meta_backbone or cfg.train.backbone,
+        mode=meta_mode,
+        device=device,
+    )
 
 
 def run_evaluation(
@@ -506,7 +514,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         cfg,
         checkpoint=args.checkpoint,
         device=resolve_device(args.device),
-        do_export=args.export_onnx,
+        do_export=args.export_onnx or args.quantize,
         do_quantize=args.quantize,
         do_robustness=args.robustness,
         do_cross_dataset=args.cross_dataset,

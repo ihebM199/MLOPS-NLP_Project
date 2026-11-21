@@ -118,7 +118,7 @@ def build_optimizer(model: AdaptiveFusionDetector, cfg: TrainConfig) -> torch.op
     groups: list[dict[str, Any]] = [
         {"params": model.spatial_projection.parameters(), "lr": t.lr_fusion, "name": "spatial_projection"}
     ]
-    if model.mode in ("fusion", "spatial_only"):
+    if model.mode in ("fusion", "spatial_only", "concat_no_gate"):
         groups.append({"params": model.spatial_net.parameters(), "lr": t.lr_backbone, "name": "backbone"})
     if model.mode in ("fusion", "freq_only", "concat_no_gate"):
         groups.append({"params": model.freq_net.parameters(), "lr": t.lr_fusion, "name": "freq_net"})
@@ -289,7 +289,7 @@ def run_training(
     use_amp = amp_enabled(device, cfg.train.use_amp)
     scaler = torch.amp.GradScaler(device.type, enabled=use_amp) if use_amp else None
 
-    if cfg.train.freeze_backbone_epochs > 0 and model.mode in ("fusion", "spatial_only"):
+    if cfg.train.freeze_backbone_epochs > 0 and model.mode in ("fusion", "spatial_only", "concat_no_gate"):
         set_backbone_trainable(model, False)
         LOGGER.info("Backbone frozen for the first %d epoch(s).", cfg.train.freeze_backbone_epochs)
 
@@ -331,7 +331,7 @@ def run_training(
             if (
                 cfg.train.freeze_backbone_epochs > 0
                 and epoch == cfg.train.freeze_backbone_epochs
-                and model.mode in ("fusion", "spatial_only")
+                and model.mode in ("fusion", "spatial_only", "concat_no_gate")
             ):
                 set_backbone_trainable(model, True)
                 LOGGER.info("Backbone unfrozen at epoch %d (gradual fine-tuning).", epoch + 1)
@@ -389,20 +389,19 @@ def run_training(
                 bad_epochs += 1
 
             scheduler.step()
-            if scaler is not None:
-                torch.save(
-                    {
-                        "model": model.state_dict(),
-                        "optimizer": optimizer.state_dict(),
-                        "scheduler": scheduler.state_dict(),
-                        "scaler": scaler.state_dict(),
-                        "history": history,
-                        "best_f1": best_f1,
-                        "bad_epochs": bad_epochs,
-                        "epoch": epoch + 1,
-                    },
-                    last_path,
-                )
+            torch.save(
+                {
+                    "model": model.state_dict(),
+                    "optimizer": optimizer.state_dict(),
+                    "scheduler": scheduler.state_dict(),
+                    "scaler": scaler.state_dict() if scaler is not None else None,
+                    "history": history,
+                    "best_f1": best_f1,
+                    "bad_epochs": bad_epochs,
+                    "epoch": epoch + 1,
+                },
+                last_path,
+            )
             LOGGER.info(
                 "Epoch %02d/%02d | loss %.4f/%.4f | acc %.2f%%/%.2f%% | F1 %.4f/%.4f | %.0fs %s",
                 epoch + 1, cfg.train.epochs,
@@ -485,15 +484,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
 def config_from_args(args: argparse.Namespace) -> TrainConfig:
     cfg = load_config(args.config, quick_demo=args.quick_demo)
     cfg.with_overrides(
-        mode=args.mode,
-        backbone=args.backbone,
-        epochs=args.epochs,
-        batch_size=args.batch_size,
-        lr_backbone=args.lr_backbone,
-        lr_fusion=args.lr_fusion,
-        lr_classifier=args.lr_classifier,
-        resume=args.resume or None,
-        run_name=args.run_name,
+        train__mode=args.mode,
+        train__backbone=args.backbone,
+        train__epochs=args.epochs,
+        train__batch_size=args.batch_size,
+        train__lr_backbone=args.lr_backbone,
+        train__lr_fusion=args.lr_fusion,
+        train__lr_classifier=args.lr_classifier,
+        train__resume=args.resume or None,
+        train__run_name=args.run_name,
     )
     cfg.data.train_per_class = args.train_per_class or cfg.data.train_per_class
     cfg.data.valid_per_class = args.valid_per_class or cfg.data.valid_per_class

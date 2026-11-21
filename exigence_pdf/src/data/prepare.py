@@ -142,8 +142,17 @@ def index_zip(zip_path: Path, zip_root: str = DEFAULT_ZIP_ROOT) -> dict[tuple[st
 
 
 def subset_counts(index: Mapping[tuple[str, str], list[str]]) -> pd.DataFrame:
-    table = pd.Series({f"{k[0]}/{k[1]}": len(v) for k, v in index.items()})
-    return table.rename_axis(["split", "class"]).unstack().fillna(0).astype(int)
+    """Images per (split, class) as a ``split x class`` table."""
+    rows = [{"split": split, "class": cls, "n": len(members)} for (split, cls), members in index.items()]
+    if not rows:
+        return pd.DataFrame(columns=list(LABEL2ID))
+    return (
+        pd.DataFrame(rows)
+        .pivot(index="split", columns="class", values="n")
+        .reindex(list(SPLITS))
+        .fillna(0)
+        .astype(int)
+    )
 
 
 def extract_subset(
