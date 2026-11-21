@@ -45,7 +45,9 @@ def write_json(path: str | Path, payload: Any, *, indent: int = 2) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps(sanitize(payload), indent=indent, default=json_default, ensure_ascii=False, allow_nan=False),
+        json.dumps(
+            sanitize(payload), indent=indent, default=json_default, ensure_ascii=False, allow_nan=False
+        ),
         "utf-8",
     )
     return path

@@ -74,9 +74,7 @@ def decode_image(
     if not data:
         raise EmptyUploadError(f"The file {filename or ''!r} is empty.".replace("  ", " "))
     if len(data) > max_bytes:
-        raise FileTooLargeError(
-            f"File is {len(data) / 1e6:.1f} MB; the limit is {max_bytes / 1e6:.1f} MB."
-        )
+        raise FileTooLargeError(f"File is {len(data) / 1e6:.1f} MB; the limit is {max_bytes / 1e6:.1f} MB.")
     if content_type and content_type.lower() not in ALLOWED_CONTENT_TYPES:
         raise UnsupportedFormatError(
             f"Content type {content_type!r} is not supported (use JPEG, PNG, WebP or BMP)."

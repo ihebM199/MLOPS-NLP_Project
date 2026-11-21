@@ -73,7 +73,13 @@ DEFAULT_SOURCES: tuple[ExternalSource, ...] = (
         "faceforensics-c23",
         root=Path("data/external/faceforensics-c23"),
         real_dirs=("original",),
-        fake_dirs=("DeepFakeDetection", "DeepFakeDetection_original", "Face2Face", "FaceSwap", "NeuralTextures"),
+        fake_dirs=(
+            "DeepFakeDetection",
+            "DeepFakeDetection_original",
+            "Face2Face",
+            "FaceSwap",
+            "NeuralTextures",
+        ),
         tags=("video", "identity"),
     ),
     ExternalSource(
@@ -146,7 +152,11 @@ def scan_source(
                         "path": str(path),
                         "label": label,
                         "source": source.name,
-                        "group": group_key(path) if source.tags and "video" in source.tags else identity_from_filename(path),
+                        "group": (
+                            group_key(path)
+                            if source.tags and "video" in source.tags
+                            else identity_from_filename(path)
+                        ),
                         "md5": digest,
                     }
                 )
@@ -169,9 +179,7 @@ def build_external_manifest(
         if not source.enabled or not source.available:
             LOGGER.info("external source %-20s : not found at %s (skipped)", source.name, source.root)
             continue
-        frame = scan_source(
-            source, max_per_class=max_per_class, seed=seed, exclude_hashes=exclude_hashes
-        )
+        frame = scan_source(source, max_per_class=max_per_class, seed=seed, exclude_hashes=exclude_hashes)
         if not frame.empty:
             frame["tags"] = ",".join(source.tags)
             frames.append(frame)
@@ -207,7 +215,9 @@ def manifest_summary(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return pd.DataFrame()
     return (
-        frame.groupby(["source", "label"]).size().unstack(fill_value=0)
+        frame.groupby(["source", "label"])
+        .size()
+        .unstack(fill_value=0)
         .rename(columns={0: "real", 1: "fake"})
         .assign(total=lambda d: d.sum(axis=1))
     )

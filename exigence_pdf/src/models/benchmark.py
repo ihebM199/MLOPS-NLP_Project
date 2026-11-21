@@ -82,15 +82,17 @@ def latency_benchmark(
                 "latency_ms_p50": round(median, 2),
                 "latency_ms_p95": round(float(np.percentile(timings, 95)), 2),
                 "throughput_img_s": round(batch_size * 1000 / median, 1),
-                "peak_gpu_mem_mb": round(torch.cuda.max_memory_allocated() / 2**20, 1)
-                if device_type == "cuda"
-                else None,
+                "peak_gpu_mem_mb": (
+                    round(torch.cuda.max_memory_allocated() / 2**20, 1) if device_type == "cuda" else None
+                ),
             }
         )
     return pd.DataFrame(rows)
 
 
-def onnx_latency(path: str | Path, *, iterations: int = 100, warmup: int = 10, image_size: int = 224) -> Dict[str, float]:
+def onnx_latency(
+    path: str | Path, *, iterations: int = 100, warmup: int = 10, image_size: int = 224
+) -> Dict[str, float]:
     """CPU latency of an ONNX variant (batch 1), median + p95 in ms."""
     import onnxruntime as ort
 
@@ -119,8 +121,6 @@ def onnx_latency(path: str | Path, *, iterations: int = 100, warmup: int = 10, i
 
 def run_benchmark(cfg, model: Any, *, device: Any = "cpu", log_to_mlflow: bool = True) -> Dict[str, Any]:
     """Full efficiency report for the PyTorch model (written to ``reports/``)."""
-    from src.utils.paths import REPORTS_DIR
-
     report = {
         "parameters": count_parameters(model),
         "active_parameters": model.active_parameters() if hasattr(model, "active_parameters") else None,
@@ -149,17 +149,22 @@ def run_benchmark(cfg, model: Any, *, device: Any = "cpu", log_to_mlflow: bool =
     return report
 
 
-def variants_table(
-    rows: Iterable[Dict[str, Any]], path: Optional[str | Path] = None
-) -> pd.DataFrame:
+def variants_table(rows: Iterable[Dict[str, Any]], path: Optional[str | Path] = None) -> pd.DataFrame:
     """Build (and optionally persist) the FP32/FP16/INT8 trade-off table."""
     table = pd.DataFrame(list(rows))
     if not table.empty:
         columns = [
             c
             for c in (
-                "variant", "size_mb", "latency_ms_p50", "latency_ms_p95",
-                "accuracy", "f1", "auc", "eer", "n_samples",
+                "variant",
+                "size_mb",
+                "latency_ms_p50",
+                "latency_ms_p95",
+                "accuracy",
+                "f1",
+                "auc",
+                "eer",
+                "n_samples",
             )
             if c in table.columns
         ]

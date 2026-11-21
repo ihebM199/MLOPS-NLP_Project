@@ -1,14 +1,19 @@
 # ---------------------------------------------------------------------------
 # Data & model artefacts  (versioned with DVC, never with Git)
 # ---------------------------------------------------------------------------
-data/raw/
-data/processed/
-data/external/
-models/
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/external/*
+!data/external/README.md
+models/*
+!models/.gitkeep
 models/_archive/
 mlruns/
 mlartifacts/
-reports/
+reports/*
+!reports/.gitkeep
 archive/
 frontend/public/examples/*.jpg
 frontend/public/examples/*.png

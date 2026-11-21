@@ -31,7 +31,9 @@ def build_fake_onnx(path: Path) -> Path:
         helper.make_node("ReduceMean", ["image"], ["image_mean"], axes=[1, 2, 3], keepdims=1),
         helper.make_node("Flatten", ["image_mean"], ["image_mean_flat"], axis=1),
         helper.make_node(
-            "Constant", [], ["ten"],
+            "Constant",
+            [],
+            ["ten"],
             value=helper.make_tensor("ten_value", TensorProto.FLOAT, [1, 1], [10.0]),
         ),
         helper.make_node("Mul", ["image_mean_flat", "ten"], ["logit"]),
@@ -39,7 +41,9 @@ def build_fake_onnx(path: Path) -> Path:
         helper.make_node("Flatten", ["freq_mean"], ["freq_mean_flat"], axis=1),
         helper.make_node("Sigmoid", ["freq_mean_flat"], ["w_spatial"]),
         helper.make_node(
-            "Constant", [], ["one"],
+            "Constant",
+            [],
+            ["one"],
             value=helper.make_tensor("one_value", TensorProto.FLOAT, [1, 1], [1.0]),
         ),
         helper.make_node("Sub", ["one", "w_spatial"], ["w_frequency"]),

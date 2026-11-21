@@ -44,9 +44,7 @@ def build_dataframe(root: str | Path, splits: Sequence[str] = SPLITS) -> pd.Data
     return pd.DataFrame(rows, columns=["split", "class", "label", "path"])
 
 
-def subset_per_class(
-    df: pd.DataFrame, split: str, limit: Optional[int], *, seed: int = 42
-) -> pd.DataFrame:
+def subset_per_class(df: pd.DataFrame, split: str, limit: Optional[int], *, seed: int = 42) -> pd.DataFrame:
     """Deterministically keep at most ``limit`` images per class for ``split``."""
     part = df[df["split"] == split]
     if limit is None or part.empty:

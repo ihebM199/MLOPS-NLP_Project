@@ -98,7 +98,13 @@ def plot_evaluation(
     axes[2].plot([0, 1], [0, 1], "--", color=REAL_COLOR, lw=1.1)
     if eer is not None:
         axes[2].plot(eer, 1 - eer, "ro", label=f"EER = {eer:.4f}")
-    axes[2].set(title="ROC curve", xlabel="False positive rate", ylabel="True positive rate", xlim=(0, 1), ylim=(0, 1.02))
+    axes[2].set(
+        title="ROC curve",
+        xlabel="False positive rate",
+        ylabel="True positive rate",
+        xlim=(0, 1),
+        ylim=(0, 1.02),
+    )
     axes[2].legend(loc="lower right")
 
     fig.suptitle(title, fontsize=13, fontweight="bold")
@@ -114,8 +120,7 @@ def plot_score_distribution(
     y_prob = np.asarray(y_prob, dtype=float)
     fig, ax = plt.subplots(figsize=(7.5, 4.2))
     for label, name in ((0, "REAL"), (1, "FAKE")):
-        ax.hist(y_prob[y_true == label], bins=40, range=(0, 1), alpha=0.65,
-                color=PALETTE[name], label=name)
+        ax.hist(y_prob[y_true == label], bins=40, range=(0, 1), alpha=0.65, color=PALETTE[name], label=name)
     ax.axvline(threshold, color="black", ls="--", lw=1, label=f"threshold={threshold:.2f}")
     ax.set(title="Score distribution P(fake)", xlabel="P(fake)", ylabel="Images", yscale="log")
     ax.legend()
@@ -187,14 +192,19 @@ def plot_fusion_weights(
         (axes[1], w_frequency, "Frequency weight"),
     ):
         for label, name in ((0, "REAL"), (1, "FAKE")):
-            ax.hist(np.asarray(values)[y_true == label], bins=30, alpha=0.6,
-                    color=PALETTE[name], label=name)
+            ax.hist(np.asarray(values)[y_true == label], bins=30, alpha=0.6, color=PALETTE[name], label=name)
         ax.set_title(title)
         ax.legend()
     for label, name in ((0, "REAL"), (1, "FAKE")):
         mask = y_true == label
-        axes[2].scatter(np.asarray(w_spatial)[mask], np.asarray(w_frequency)[mask],
-                        s=12, alpha=0.45, color=PALETTE[name], label=name)
+        axes[2].scatter(
+            np.asarray(w_spatial)[mask],
+            np.asarray(w_frequency)[mask],
+            s=12,
+            alpha=0.45,
+            color=PALETTE[name],
+            label=name,
+        )
     axes[2].set(title="Dynamic fusion weights", xlabel="w_spatial", ylabel="w_frequency")
     axes[2].legend()
     fig.tight_layout()
@@ -207,8 +217,7 @@ def plot_gradcam_grid(rows: Sequence[Mapping[str, Any]], path: Optional[str | Pa
     n_cols = 3
     fig, axes = plt.subplots(len(rows), n_cols, figsize=(10, 3.2 * len(rows)), squeeze=False)
     for row, item in zip(axes, rows):
-        for ax, key, subtitle in zip(row, ("image", "heatmap", "overlay"),
-                                     ("Input", "Grad-CAM", "Overlay")):
+        for ax, key, subtitle in zip(row, ("image", "heatmap", "overlay"), ("Input", "Grad-CAM", "Overlay")):
             ax.imshow(item[key], cmap="jet" if key == "heatmap" else None)
             ax.set_title(item.get("title", "") if key == "image" else subtitle, fontsize=9)
             ax.axis("off")

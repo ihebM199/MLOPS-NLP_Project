@@ -76,17 +76,33 @@ def build_loaders(
     eval_tf = build_eval_transform(cfg.data.image_size)
     loaders = {
         "train": make_loader(
-            frames["train"], "train", train_tf, batch_size=cfg.train.batch_size,
-            num_workers=cfg.data.num_workers, shuffle=True, image_size=cfg.data.image_size,
-            drop_last=True, seed=cfg.data.seed,
+            frames["train"],
+            "train",
+            train_tf,
+            batch_size=cfg.train.batch_size,
+            num_workers=cfg.data.num_workers,
+            shuffle=True,
+            image_size=cfg.data.image_size,
+            drop_last=True,
+            seed=cfg.data.seed,
         ),
         "valid": make_loader(
-            frames["valid"], "valid", eval_tf, batch_size=cfg.train.batch_size,
-            num_workers=cfg.data.num_workers, shuffle=False, image_size=cfg.data.image_size,
+            frames["valid"],
+            "valid",
+            eval_tf,
+            batch_size=cfg.train.batch_size,
+            num_workers=cfg.data.num_workers,
+            shuffle=False,
+            image_size=cfg.data.image_size,
         ),
         "test": make_loader(
-            frames["test"], "test", eval_tf, batch_size=cfg.train.batch_size,
-            num_workers=cfg.data.num_workers, shuffle=False, image_size=cfg.data.image_size,
+            frames["test"],
+            "test",
+            eval_tf,
+            batch_size=cfg.train.batch_size,
+            num_workers=cfg.data.num_workers,
+            shuffle=False,
+            image_size=cfg.data.image_size,
         ),
     }
     LOGGER.info(
@@ -209,7 +225,9 @@ def train_one_epoch(
         y_true = np.concatenate(y_true_all)
         y_pred = np.concatenate(y_pred_all)
         batch_metrics = compute_metrics(y_true, y_pred)
-        metrics.update({k: v for k, v in batch_metrics.items() if k in ("accuracy", "balanced_accuracy", "f1")})
+        metrics.update(
+            {k: v for k, v in batch_metrics.items() if k in ("accuracy", "balanced_accuracy", "f1")}
+        )
         metrics["train_samples_scored"] = float(len(y_true))
     return metrics
 
@@ -279,7 +297,9 @@ def run_training(
 
     model = build_model(cfg).to(device)
     if init_from:
-        source, info = load_checkpoint(init_from, backbone=cfg.train.backbone, mode=cfg.train.mode, device=device)
+        source, info = load_checkpoint(
+            init_from, backbone=cfg.train.backbone, mode=cfg.train.mode, device=device
+        )
         model.load_state_dict(source.state_dict(), strict=True)
         LOGGER.info("Initialised from %s (backbone=%s)", init_from, info["backbone"])
 
@@ -337,15 +357,26 @@ def run_training(
                 LOGGER.info("Backbone unfrozen at epoch %d (gradual fine-tuning).", epoch + 1)
 
             train_metrics = train_one_epoch(
-                model, loaders["train"], optimizer, criterion, cfg, device,
-                scaler=scaler, use_amp=use_amp, epoch=epoch + 1,
+                model,
+                loaders["train"],
+                optimizer,
+                criterion,
+                cfg,
+                device,
+                scaler=scaler,
+                use_amp=use_amp,
+                epoch=epoch + 1,
             )
             val = None
             val_metrics: Dict[str, float] = {}
             if loaders["valid"] is not None:
                 val = predict_loader(
-                    model, loaders["valid"], device=device,
-                    criterion=criterion, use_amp=use_amp, threshold=cfg.eval.threshold,
+                    model,
+                    loaders["valid"],
+                    device=device,
+                    criterion=criterion,
+                    use_amp=use_amp,
+                    threshold=cfg.eval.threshold,
                 )
                 val_metrics = compute_metrics(val["y_true"], val["y_pred"], val["y_prob"])
 
@@ -404,11 +435,16 @@ def run_training(
             )
             LOGGER.info(
                 "Epoch %02d/%02d | loss %.4f/%.4f | acc %.2f%%/%.2f%% | F1 %.4f/%.4f | %.0fs %s",
-                epoch + 1, cfg.train.epochs,
-                row["loss"], row.get("val_loss", float("nan")),
-                100 * row.get("acc", float("nan")), 100 * row.get("val_accuracy", float("nan")),
-                row.get("f1", float("nan")), row.get("val_f1", float("nan")),
-                row["seconds"], "* best" if improved else f"(no gain {bad_epochs}/{cfg.train.patience})",
+                epoch + 1,
+                cfg.train.epochs,
+                row["loss"],
+                row.get("val_loss", float("nan")),
+                100 * row.get("acc", float("nan")),
+                100 * row.get("val_accuracy", float("nan")),
+                row.get("f1", float("nan")),
+                row.get("val_f1", float("nan")),
+                row["seconds"],
+                "* best" if improved else f"(no gain {bad_epochs}/{cfg.train.patience})",
             )
             if bad_epochs >= cfg.train.patience:
                 LOGGER.info("Early stopping at epoch %d.", epoch + 1)

@@ -161,7 +161,10 @@ class ErrorResponse(BaseModel):
 
     model_config = ConfigDict(
         json_schema_extra={
-            "example": {"error": "INVALID_IMAGE", "detail": "The uploaded file is not a decodable image.",
-                        "status_code": 400}
+            "example": {
+                "error": "INVALID_IMAGE",
+                "detail": "The uploaded file is not a decodable image.",
+                "status_code": 400,
+            }
         }
     )

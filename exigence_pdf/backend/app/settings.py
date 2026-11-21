@@ -44,7 +44,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     model_version: str = "1.0.0"
 
-    @field_validator("model_path", "pytorch_checkpoint_path", "model_config_path", "metrics_path", "frontend_dist")
+    @field_validator(
+        "model_path", "pytorch_checkpoint_path", "model_config_path", "metrics_path", "frontend_dist"
+    )
     @classmethod
     def _absolute(cls, value: Path) -> Path:
         return value if value.is_absolute() else (PROJECT_ROOT / value)

@@ -50,7 +50,9 @@ def test_onnx_predict_white_and_black(fake_onnx: Path, white_png_bytes: bytes, b
     assert black["prob_fake"] < 0.5 and black["label"] == "real"
     assert white["prob_fake"] + white["prob_real"] == pytest.approx(1.0)
     assert 0.0 <= white["fusion_weights"]["spatial"] <= 1.0
-    assert white["fusion_weights"]["spatial"] + white["fusion_weights"]["frequency"] == pytest.approx(1.0, abs=1e-4)
+    assert white["fusion_weights"]["spatial"] + white["fusion_weights"]["frequency"] == pytest.approx(
+        1.0, abs=1e-4
+    )
     for key in ("preprocess_ms", "inference_ms", "total_server_ms"):
         assert white["latency"][key] >= 0
 
@@ -121,7 +123,9 @@ def test_gradcam_visualize_returns_png(fake_onnx: Path, tmp_path: Path, monkeypa
 
     monkeypatch.setattr(GradCamService, "_load", fake_load)
     assert service.available is True
-    png, meta = service.visualize(Image.open(io.BytesIO(image_bytes)).convert("RGB"), target="fake", alpha=0.5)
+    png, meta = service.visualize(
+        Image.open(io.BytesIO(image_bytes)).convert("RGB"), target="fake", alpha=0.5
+    )
     assert png[:8] == b"\x89PNG\r\n\x1a\n"
     decoded = Image.open(io.BytesIO(png))
     assert decoded.size == (224, 224)

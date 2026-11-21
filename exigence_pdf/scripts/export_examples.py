@@ -24,7 +24,9 @@ from src.data.dataset import LABEL2ID, build_dataframe, subset_per_class  # noqa
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Export demo images from the test split.")
-    parser.add_argument("--dataset-root", default=str(PROJECT_ROOT / "data/processed/real_vs_fake/real-vs-fake"))
+    parser.add_argument(
+        "--dataset-root", default=str(PROJECT_ROOT / "data/processed/real_vs_fake/real-vs-fake")
+    )
     parser.add_argument("--output", default=str(PROJECT_ROOT / "frontend/public/examples"))
     parser.add_argument("--per-class", type=int, default=4)
     parser.add_argument("--size", type=int, default=512)

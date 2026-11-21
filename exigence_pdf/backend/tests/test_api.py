@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import io
 import json
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from PIL import Image
 
 from backend.app.main import create_app
 from backend.app.settings import Settings
@@ -75,8 +73,15 @@ def test_predict_returns_strict_schema(client: TestClient, image_bytes: bytes):
     assert response.status_code == 200, response.text
     body = response.json()
     assert set(body) >= {
-        "label", "prob_real", "prob_fake", "confidence", "logit", "threshold",
-        "fusion_weights", "latency", "model_version",
+        "label",
+        "prob_real",
+        "prob_fake",
+        "confidence",
+        "logit",
+        "threshold",
+        "fusion_weights",
+        "latency",
+        "model_version",
     }
     assert body["label"] in {"real", "fake"}
     assert 0.0 <= body["prob_real"] <= 1.0
@@ -203,9 +208,7 @@ def test_metadata_reads_metrics_and_config(fake_onnx: Path, tmp_path: Path):
 # /predict/visualize
 # --------------------------------------------------------------------------- #
 def test_visualize_503_without_pytorch_checkpoint(client: TestClient, image_bytes: bytes):
-    response = client.post(
-        "/predict/visualize", files={"file": ("face.jpg", image_bytes, "image/jpeg")}
-    )
+    response = client.post("/predict/visualize", files={"file": ("face.jpg", image_bytes, "image/jpeg")})
     assert response.status_code == 503
     assert response.json()["error"] == "GRADCAM_UNAVAILABLE"
 

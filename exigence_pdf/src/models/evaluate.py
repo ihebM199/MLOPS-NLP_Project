@@ -22,7 +22,6 @@ from typing import Any, Dict, Optional, Sequence
 
 import numpy as np
 import pandas as pd
-import torch
 from PIL import Image, ImageFilter
 from torch.utils.data import DataLoader, Dataset
 
@@ -132,8 +131,13 @@ def summarize(
         metrics["auc_ci95"] = bootstrap_ci(y_true, y_prob, metric="auc")
     LOGGER.info(
         "%s | acc %.2f%% | F1 %.4f | AUC %.4f | EER %.4f | thr %.3f | n=%d",
-        name, 100 * metrics["accuracy"], metrics["f1"], metrics.get("auc", float("nan")),
-        metrics.get("eer", float("nan")), threshold, metrics["n_samples"],
+        name,
+        100 * metrics["accuracy"],
+        metrics["f1"],
+        metrics.get("auc", float("nan")),
+        metrics.get("eer", float("nan")),
+        threshold,
+        metrics["n_samples"],
     )
     return metrics
 
@@ -167,8 +171,10 @@ def run_robustness(
         + [("resize", f) for f in cfg.eval.resize_factors]
     )
     reference = predict_loader(
-        model, DataLoader(base, batch_size=cfg.train.batch_size, shuffle=False),
-        device=device, threshold=threshold,
+        model,
+        DataLoader(base, batch_size=cfg.train.batch_size, shuffle=False),
+        device=device,
+        threshold=threshold,
     )
     report["clean"] = summarize(reference, threshold=threshold, name="robustness/clean")
     for kind, value in degradations:
@@ -193,9 +199,7 @@ def run_cross_dataset(
         max_per_class=cfg.eval.external_max_per_class, seed=cfg.data.seed, exclude_hashes=hashes
     )
     if manifest.empty:
-        LOGGER.warning(
-            "No external dataset found under data/external/ — cross-dataset study skipped."
-        )
+        LOGGER.warning("No external dataset found under data/external/ — cross-dataset study skipped.")
         return {}
     eval_tf = build_eval_transform(cfg.data.image_size)
     report: Dict[str, Any] = {
@@ -209,9 +213,7 @@ def run_cross_dataset(
         device=device,
         threshold=threshold,
     )
-    report["overall"] = summarize(
-        overall, threshold=threshold, name="cross_dataset/overall", bootstrap=True
-    )
+    report["overall"] = summarize(overall, threshold=threshold, name="cross_dataset/overall", bootstrap=True)
     per_source = {}
     for source, part in manifest.groupby("source"):
         results = predict_loader(
@@ -319,9 +321,13 @@ def run_evaluation(
     eval_tf = build_eval_transform(cfg.data.image_size)
     loaders = {
         split: make_loader(
-            frame, split if split in ("valid", "test") else "test", eval_tf,
-            batch_size=cfg.train.batch_size, num_workers=cfg.data.num_workers,
-            shuffle=False, image_size=cfg.data.image_size,
+            frame,
+            split if split in ("valid", "test") else "test",
+            eval_tf,
+            batch_size=cfg.train.batch_size,
+            num_workers=cfg.data.num_workers,
+            shuffle=False,
+            image_size=cfg.data.image_size,
         )
         for split, frame in frames.items()
     }
@@ -350,8 +356,10 @@ def run_evaluation(
                 }
                 threshold = calibration["threshold"]
                 plot_score_distribution(
-                    valid_results["y_true"], valid_results["y_prob"],
-                    threshold=threshold, path=figures / "valid_scores.png",
+                    valid_results["y_true"],
+                    valid_results["y_prob"],
+                    threshold=threshold,
+                    path=figures / "valid_scores.png",
                 )
                 write_json(Path(cfg.reports_dir) / "threshold_calibration.json", calibration)
             results["valid"] = valid_results
@@ -368,24 +376,39 @@ def run_evaluation(
                 test_results["y_true"], (test_results["y_prob"] >= 0.5).astype(int), test_results["y_prob"]
             )["accuracy"]
             plot_evaluation(
-                test_results["y_true"], test_results["y_prob"], threshold=threshold,
+                test_results["y_true"],
+                test_results["y_prob"],
+                threshold=threshold,
                 title=f"Test split — 140k real & fake faces (n={len(test_results['y_true'])})",
-                path=figures / "test_evaluation.png", eer=report["test"].get("eer"),
+                path=figures / "test_evaluation.png",
+                eer=report["test"].get("eer"),
             )
             plot_score_distribution(
-                test_results["y_true"], test_results["y_prob"],
-                threshold=threshold, path=figures / "test_scores.png",
+                test_results["y_true"],
+                test_results["y_prob"],
+                threshold=threshold,
+                path=figures / "test_scores.png",
             )
             if model.mode == "fusion" and len(test_results["w_spatial"]) == len(test_results["y_true"]):
                 plot_fusion_weights(
-                    test_results["y_true"], test_results["w_spatial"], test_results["w_frequency"],
+                    test_results["y_true"],
+                    test_results["w_spatial"],
+                    test_results["w_frequency"],
                     path=figures / "fusion_weights.png",
                 )
                 report["fusion_weights"] = {
-                    "mean_spatial_real": float(np.mean(test_results["w_spatial"][test_results["y_true"] == 0])),
-                    "mean_spatial_fake": float(np.mean(test_results["w_spatial"][test_results["y_true"] == 1])),
-                    "mean_frequency_real": float(np.mean(test_results["w_frequency"][test_results["y_true"] == 0])),
-                    "mean_frequency_fake": float(np.mean(test_results["w_frequency"][test_results["y_true"] == 1])),
+                    "mean_spatial_real": float(
+                        np.mean(test_results["w_spatial"][test_results["y_true"] == 0])
+                    ),
+                    "mean_spatial_fake": float(
+                        np.mean(test_results["w_spatial"][test_results["y_true"] == 1])
+                    ),
+                    "mean_frequency_real": float(
+                        np.mean(test_results["w_frequency"][test_results["y_true"] == 0])
+                    ),
+                    "mean_frequency_fake": float(
+                        np.mean(test_results["w_frequency"][test_results["y_true"] == 1])
+                    ),
                 }
 
         run_robustness_flag = do_robustness if do_robustness is not None else cfg.eval.robustness
@@ -415,9 +438,7 @@ def run_evaluation(
             report["onnx"] = export
             if mlflow is not None:
                 for name, variant in export["variants"].items():
-                    tracking.log_metrics(
-                        cfg, {f"onnx_{name}_size_mb": variant.get("size_mb") or 0.0}
-                    )
+                    tracking.log_metrics(cfg, {f"onnx_{name}_size_mb": variant.get("size_mb") or 0.0})
                 tracking.log_artifact(cfg, export["variants"]["fp32"]["path"], artifact_path="onnx")
 
         if do_quantize and "test" in frames and report.get("onnx"):
@@ -437,7 +458,9 @@ def run_evaluation(
             )
             for name, variant in report["onnx"]["variants"].items():
                 metrics = measure_variant_accuracy(
-                    variant["path"], sample["path"].tolist(), sample["label"].tolist(),
+                    variant["path"],
+                    sample["path"].tolist(),
+                    sample["label"].tolist(),
                     transform=eval_tf,
                 )
                 rows.append(
@@ -466,8 +489,7 @@ def run_evaluation(
         tracking.log_metrics(
             cfg,
             {
-                **{f"test_{k}": v for k, v in report.get("test", {}).items()
-                   if isinstance(v, (int, float))},
+                **{f"test_{k}": v for k, v in report.get("test", {}).items() if isinstance(v, (int, float))},
                 "threshold": threshold,
             },
         )

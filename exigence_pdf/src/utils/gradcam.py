@@ -95,8 +95,6 @@ class GradCAM:
         alpha: float = 0.45,
     ) -> Dict[str, Any]:
         """Explain a PIL image: returns the RGB input, heatmap, overlay and PNG bytes."""
-        import torch
-
         tensor = transform(image.convert("RGB")).unsqueeze(0)
         cam, prediction = self.heatmap(tensor, target=target)
         rgb = denormalize(tensor[0]).permute(1, 2, 0).detach().cpu().numpy()

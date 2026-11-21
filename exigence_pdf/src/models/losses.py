@@ -62,9 +62,7 @@ class LabelSmoothingBCE(nn.Module):
         self.smoothing = smoothing
 
     def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
-        return F.binary_cross_entropy_with_logits(
-            logits, smooth_targets(targets.float(), self.smoothing)
-        )
+        return F.binary_cross_entropy_with_logits(logits, smooth_targets(targets.float(), self.smoothing))
 
 
 def criterion_for(run_cfg: Optional[object]) -> nn.Module:

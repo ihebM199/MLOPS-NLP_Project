@@ -1,0 +1,306 @@
+% =============================================================================
+% Rapport technique — Deepfake Adaptive Fusion (MLOps)
+% Compilation : ./scripts/build_report.sh   (ou pdflatex + bibtex + pdflatex x2)
+% =============================================================================
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{listings}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{siunitx}
+
+\graphicspath{{../reports/figures/}{../docs/}{./generated/}}
+\hypersetup{colorlinks=true, linkcolor=blue!50!black, urlcolor=blue!50!black,
+            citecolor=blue!50!black, pdftitle={Deepfake Adaptive Fusion — Rapport technique},
+            pdfauthor={Projet MLOps}}
+\lstset{basicstyle=\ttfamily\small, breaklines=true, frame=single,
+        backgroundcolor=\color{gray!5}, columns=fullflexible}
+
+\title{\textbf{Deepfake Adaptive Fusion}\\[0.3em]
+\large Détection de deepfakes par fusion adaptative spatiale et fréquentielle\\
+\large Industrialisation MLOps : DVC, MLflow, ONNX, FastAPI, React, Docker, CI/CD}
+\author{Projet MLOps \& NLP}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Ce rapport décrit la conception, l'implémentation et l'évaluation d'un détecteur
+de deepfakes combinant un flux spatial convolutif et un flux fréquentiel, agrégés
+par une porte adaptative. Le prototype issu d'un notebook Colab a été refactorisé
+en un dépôt reproductible : pipeline DVC, suivi MLflow, export ONNX quantifié,
+API FastAPI, interface React interactive, images Docker et CI/CD GitHub Actions.
+Les métriques présentées sont générées par les artefacts du dépôt
+(\texttt{reports/}, MLflow) ; aucune valeur n'est codée en dur. Nous discutons
+aussi les limites de généralisation et les risques d'usage.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% -----------------------------------------------------------------------------
+\section{Contexte et problématique}
+Les deepfakes, images ou vidéos synthétiques générées par réseaux antagonistes
+génératifs (GAN) ou modèles de diffusion, posent des risques de désinformation,
+de fraude et d'atteinte à la réputation. La détection est un problème
+d'apprentissage supervisé binaire : distinguer une image réelle d'une image
+générée. Les approches spatiales capturent des artefacts locaux (yeux, textures,
+bords), tandis que les approches fréquentielles exploitent les traces spectrales
+laissées par le sur-échantillonnage et les opérations de génération
+\cite{wang2020cnn,durall2020watch,frank2020leveraging}.
+
+La problématique industrielle est double : (i) construire un modèle performant et
+interprétable ; (ii) le rendre reproductible, testé, déployable et maintenable.
+Le projet répond aux deux, avec une attention particulière à l'anti-fuite, à la
+traçabilité des expériences et à l'honnêteté des conclusions.
+
+% -----------------------------------------------------------------------------
+\section{Données, EDA et anti-fuite}
+\subsection{Dataset principal}
+Le dataset \texttt{xhlulu/140k-real-and-fake-faces} \cite{kaggle140k} fournit des
+visages réels et générés (StyleGAN) avec des splits officiels
+\textit{train/valid/test}. Pour tenir sur un budget Colab, un sous-échantillonnage
+déterministe par classe est appliqué (seed 42), paramétré dans
+\texttt{params.yaml}. Les tailles complètes restent accessibles en mettant les
+limites à \texttt{null}.
+
+\subsection{EDA}
+L'analyse exploratoire vérifie l'équilibre des classes, la résolution, les
+formats et le spectre de Fourier moyen réel \textit{vs} faux. Les figures sont
+produites dans \texttt{reports/figures/} (spectre moyen, distribution des scores,
+matrice de confusion, courbes ROC). Aucune figure n'est fabriquée pour le
+rapport : les blocs conditionnels ci-dessous n'affichent que les artefacts
+réellement générés.
+
+\subsection{Anti-fuite}
+Trois protections sont implémentées :
+\begin{enumerate}[nosep]
+  \item splits officiels, sans mélange manuel ;
+  \item sous-échantillonnage par classe avec graine fixe ;
+  \item test MD5 des contenus entre splits (\texttt{tests/test\_no\_leakage.py}),
+        et découpage par vidéo/identité pour les jeux externes.
+\end{enumerate}
+Les augmentations ne sont appliquées qu'au train, après le split. FFHQ est exclu
+des réels externes car déjà présent dans 140k.
+
+% -----------------------------------------------------------------------------
+\section{Architecture et justification du flux fréquentiel}
+Le modèle \texttt{AdaptiveFusionDetector} comprend :
+\begin{itemize}[nosep]
+  \item \texttt{spatial\_net} : backbone convolutif (ConvNeXt-T \cite{liu2022convnext})
+        sur l'image RGB ;
+  \item \texttt{freq\_net} : CNN sur \texttt{freq\_input = log1p(|fftshift(fft2(x))|)} ;
+  \item \texttt{spatial\_projection} et \texttt{frequency\_projection} : projections
+        vers un espace commun ;
+  \item \texttt{fusion\_gate} : porte softmax qui produit
+        $(w_{\text{spatial}}, w_{\text{fréquentiel}})$ ;
+  \item \texttt{classifier} : logit binaire ; \texttt{residual\_scale} : échelle
+        résiduelle apprise.
+\end{itemize}
+La fusion est adaptative : le modèle apprend, image par image, la confiance à
+accorder à chaque modalité. Les variantes \texttt{spatial\_only},
+\texttt{freq\_only} et \texttt{concat\_no\_gate} servent de baselines et
+d'ablations.
+
+\paragraph{Export ONNX.} \texttt{torch.fft.fft2} ne s'exporte pas proprement.
+Nous adoptons l'Option A : la FFT est calculée hors du graphe, côté inférence
+(NumPy), et le modèle ONNX prend deux entrées (\texttt{image}, \texttt{freq\_input})
+et renvoie trois sorties (\texttt{logit}, \texttt{w\_spatial},
+\texttt{w\_frequency}). La parité PyTorch/ONNX est testée
+($\max|\Delta \text{logit}| < 10^{-3}$, 100\,\% de concordance des classes).
+Voir \texttt{docs/DECISIONS.md}.
+
+% -----------------------------------------------------------------------------
+\section{Protocole expérimental}
+\paragraph{Recette.} AdamW avec learning rates différenciés (backbone, fusion,
+classifieur), schedule cosinus, label smoothing, gradient clipping, AMP,
+early stopping sur le F1 de validation, reprise via \texttt{last\_checkpoint.pt}.
+
+\paragraph{Runs obligatoires.} À données, seed et schedule identiques :
+R1 \texttt{spatial\_only}, R2 \texttt{freq\_only}, R3 \texttt{concat\_no\_gate},
+R4 \texttt{fusion}. Chaque run est tracé dans MLflow (params, métriques par
+époque, artefacts, tags git SHA/auteur/axe).
+
+\paragraph{Ablations.} RandAugment \cite{cubuk2020randaugment} + MixUp/CutMix
+\cite{zhang2018mixup,yun2019cutmix} (train uniquement), Focal Loss
+\cite{lin2017focal} \textit{vs} BCE + label smoothing, gel/dégel progressif
+\textit{vs} LR différenciés, robustesse JPEG/flou/redimensionnement.
+
+\paragraph{Cross-dataset.} Les jeux externes (Celeb-DF v2 \cite{li2020celebdf},
+FF-C23 \cite{rossler2019faceforensics}) ne servent qu'au test, jamais à
+l'entraînement. Le protocole est identique (même prétraitement, même seuil) et
+les résultats sont rapportés séparément.
+
+\paragraph{Seuil.} Seuil par défaut $P(\text{fake}) \ge 0{,}5$, calibré sur la
+validation ; la courbe précision/rappel et le seuil retenu sont écrits dans
+\texttt{reports/threshold\_calibration.json} et exposés par l'API.
+
+% -----------------------------------------------------------------------------
+\section{Résultats}
+\subsection{Métriques in-distribution}
+Les valeurs ci-dessous sont générées par
+\texttt{python -m src.models.evaluate} à partir de \texttt{reports/metrics.json}.
+
+\IfFileExists{generated/metrics_table.tex}
+  {\input{generated/metrics_table.tex}}
+  {\begin{quote}\itshape Tableau des métriques non généré : lancer
+   \texttt{python -m src.models.evaluate} puis
+   \texttt{python scripts/export\_report\_tables.py}.\end{quote}}
+
+\subsection{Baseline vs fusion et ablations}
+\IfFileExists{generated/comparison_table.tex}
+  {\input{generated/comparison_table.tex}}
+  {\begin{quote}\itshape Tableau comparatif non généré : lancer
+   \texttt{python scripts/run\_experiments.py}.\end{quote}}
+
+\paragraph{Conclusion honnête.} La fusion n'apporte un gain que si les tableaux
+ci-dessus le montrent, \emph{en particulier en cross-dataset}. Si le gain
+in-distribution ne se transfère pas, nous le documentons sans le masquer. Le
+modèle final est choisi sur la validation, jamais sur le test.
+
+\subsection{Cross-dataset et robustesse}
+Les résultats cross-dataset (\texttt{reports/cross\_dataset.json}) et la
+dégradation sous JPEG/flou/redimensionnement (\texttt{reports/robustness.json})
+sont générés par l'évaluation. Ils quantifient la généralisation réelle, souvent
+plus faible qu'in-distribution.
+
+\IfFileExists{../reports/figures/confusion_matrix_test.png}{%
+\begin{figure}[H]\centering
+\includegraphics[width=0.55\linewidth]{confusion_matrix_test.png}
+\caption{Matrice de confusion sur le test (artefact réel).}
+\end{figure}}{}
+
+\IfFileExists{../reports/figures/roc_curve_test.png}{%
+\begin{figure}[H]\centering
+\includegraphics[width=0.55\linewidth]{roc_curve_test.png}
+\caption{Courbe ROC sur le test (artefact réel).}
+\end{figure}}{}
+
+% -----------------------------------------------------------------------------
+\section{Interprétabilité}
+\paragraph{Grad-CAM.} La carte Grad-CAM \cite{selvaraju2017gradcam} est calculée
+sur la dernière feature map du flux spatial, pour la classe cible
+(\texttt{fake} ou \texttt{real}), puis superposée à l'image avec une opacité
+réglable. Le backend utilise PyTorch en chargement paresseux pour
+\texttt{/predict/visualize}, ONNX Runtime restant utilisé pour
+\texttt{/predict}.
+
+\paragraph{Poids de fusion.} $w_{\text{spatial}}$ et $w_{\text{fréquentiel}}$
+sont exposés dans chaque prédiction. Ils permettent de voir si le modèle
+s'appuie plutôt sur la texture spatiale ou sur les traces spectrales ; une
+analyse par classe est produite dans \texttt{reports/}.
+
+\IfFileExists{../reports/figures/gradcam_examples.png}{%
+\begin{figure}[H]\centering
+\includegraphics[width=0.85\linewidth]{gradcam_examples.png}
+\caption{Exemples Grad-CAM (artefact réel).}
+\end{figure}}{}
+
+% -----------------------------------------------------------------------------
+\section{Optimisation ONNX (FP32 / FP16 / INT8)}
+Trois variantes sont produites : FP32, FP16 (conversion de poids) et INT8
+(quantification dynamique \texttt{onnxruntime.quantization}). Pour chacune :
+taille du fichier, latence CPU batch 1 (médiane et p95 après warm-up),
+accuracy/F1/AUC sur le test. Le compromis est résumé dans le tableau généré par
+l'évaluation.
+
+\paragraph{Règle de décision.} Si INT8 dégrade l'AUC de plus d'un point, il n'est
+pas déployé ; FP16/FP32 est conservé et le compromis est documenté.
+
+\IfFileExists{../reports/figures/onnx_benchmark.png}{%
+\begin{figure}[H]\centering
+\includegraphics[width=0.7\linewidth]{onnx_benchmark.png}
+\caption{Latence et taille des variantes ONNX (artefact réel).}
+\end{figure}}{}
+
+% -----------------------------------------------------------------------------
+\section{Architecture logicielle et MLOps}
+\paragraph{Dépôt.} Le code est séparé en \texttt{src/} (données, modèles,
+utilitaires), \texttt{backend/} (FastAPI), \texttt{frontend/} (React/Vite),
+\texttt{scripts/}, \texttt{tests/} et \texttt{docs/}. Le notebook nettoyé
+importe \texttt{src/} au lieu de dupliquer le code.
+
+\paragraph{DVC.} Pipeline \texttt{prepare → train → evaluate → export\_onnx} ;
+données et poids versionnés par DVC, jamais par Git. \texttt{dvc repro} rejoue
+le pipeline, \texttt{dvc metrics show} affiche les métriques.
+
+\paragraph{MLflow.} Expérience \texttt{deepfake-adaptive-fusion} ; runs
+comparables, artefacts, registry avec alias \texttt{staging}/\texttt{production}.
+Le backend privilégie le modèle « Production » et retombe sur le fichier local.
+
+\paragraph{API et UI.} FastAPI expose \texttt{/health},
+\texttt{/model/metadata}, \texttt{/predict}, \texttt{/predict/visualize} avec
+validation stricte (400/413/415/422/503), logs JSON et CORS. L'UI React propose
+drag \& drop, galerie, webcam, barres animées, poids de fusion, Grad-CAM et
+latences client/serveur.
+
+\paragraph{Docker et CI.} Trois services (backend, frontend nginx, MLflow) via
+\texttt{docker compose up --build}. Deux workflows GitHub Actions : tests
+(black, flake8, pytest backend $\ge 80\,\%$, vitest, build) et build Docker avec
+smoke test \texttt{/health} + \texttt{/predict}.
+
+% -----------------------------------------------------------------------------
+\section{Limites et perspectives}
+\begin{itemize}[nosep]
+  \item \textbf{Généralisation} : chute sur des générateurs inconnus (diffusion,
+        StyleGAN3) et les vidéos fortement compressées.
+  \item \textbf{Biais} : dataset majoritairement StyleGAN, qualité web,
+        déséquilibre démographique probable.
+  \item \textbf{Raccourcis} : artefacts de compression/générateur plutôt que
+        sémantique du visage ; Grad-CAM n'est pas causal.
+  \item \textbf{Seuil} : 0.5 par défaut, à recalibrer selon le coût métier.
+  \item \textbf{Temps réel} : la webcam dépend de la lumière et de la qualité du
+        flux ; pas de garantie forensique.
+\end{itemize}
+Perspectives : entraînement sur davantage de générateurs, apprentissage
+contrastif, calibration par sous-groupe, détection vidéo temporelle, suivi de
+dérive en production.
+
+% -----------------------------------------------------------------------------
+\section{Conclusion}
+Le projet transforme un notebook de recherche en une chaîne MLOps complète :
+données versionnées et anti-fuite, expériences tracées, modèle exporté et
+quantifié, API testée, interface interactive, déploiement Docker et CI/CD. Les
+résultats sont présentés sans embellissement, avec les limites de généralisation
+et les risques d'usage. La reproductibilité (DVC, seeds, artefacts) et
+l'honnêteté des conclusions sont les deux critères directeurs.
+
+% -----------------------------------------------------------------------------
+\appendix
+\section{Annexes}
+\subsection{Commandes de reproduction}
+\begin{lstlisting}
+git clone <repo> && cd <repo>
+dvc pull
+docker compose up --build
+# tests
+pytest backend -q --cov=backend/app --cov-fail-under=80
+pytest tests -q -m "not slow"
+# expériences
+python scripts/run_experiments.py
+python scripts/export_report_tables.py
+\end{lstlisting}
+
+\subsection{Captures}
+Les captures MLflow, Swagger, frontend et CI/CD sont à déposer dans
+\texttt{docs/} après exécution réelle, puis incluses ici via
+\texttt{\textbackslash includegraphics}. Aucune capture n'est simulée.
+
+\bibliographystyle{plain}
+\bibliography{refs}
+
+\end{document}

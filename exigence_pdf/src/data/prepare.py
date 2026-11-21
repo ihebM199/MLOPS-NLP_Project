@@ -126,9 +126,7 @@ def index_zip(zip_path: Path, zip_root: str = DEFAULT_ZIP_ROOT) -> dict[tuple[st
     """``{(split, class): [member names]}`` without extracting anything."""
     with zipfile.ZipFile(zip_path) as archive:
         names = [
-            n
-            for n in archive.namelist()
-            if n.startswith(zip_root + "/") and n.lower().endswith(IMG_EXT)
+            n for n in archive.namelist() if n.startswith(zip_root + "/") and n.lower().endswith(IMG_EXT)
         ]
     index: dict[tuple[str, str], list[str]] = {}
     for name in names:
@@ -222,9 +220,7 @@ def prepare_dataset(
 
     index = index_zip(zip_path, zip_root)
     if not index:
-        raise ValueError(
-            f"{zip_path} does not contain '{zip_root}/<split>/<class>/<image>' — wrong archive?"
-        )
+        raise ValueError(f"{zip_path} does not contain '{zip_root}/<split>/<class>/<image>' — wrong archive?")
     LOGGER.info("Official composition:\n%s", subset_counts(index).to_string())
     extract_subset(zip_path, dest, index, per_class, seed=cfg.data.seed)
 

@@ -239,7 +239,9 @@ class GradCamService:
         result = self._explainer.explain(image, self._transform, target=target, alpha=alpha)  # type: ignore[union-attr]
         elapsed = (time.perf_counter() - started) * 1000
         meta = {
-            "label": "fake" if result["prediction"]["prob_fake"] >= self.settings.decision_threshold else "real",
+            "label": (
+                "fake" if result["prediction"]["prob_fake"] >= self.settings.decision_threshold else "real"
+            ),
             "prob_fake": float(result["prediction"]["prob_fake"]),
             "target": target,
             "alpha": float(alpha),
@@ -269,7 +271,11 @@ class MetadataService:
             if isinstance(metrics.get("threshold"), dict)
             else self.settings.decision_threshold
         )
-        cross = (metrics.get("cross_dataset") or {}).get("overall") if isinstance(metrics.get("cross_dataset"), dict) else None
+        cross = (
+            (metrics.get("cross_dataset") or {}).get("overall")
+            if isinstance(metrics.get("cross_dataset"), dict)
+            else None
+        )
         robustness = metrics.get("robustness") or {}
         return {
             "name": "deepfake-adaptive-fusion",

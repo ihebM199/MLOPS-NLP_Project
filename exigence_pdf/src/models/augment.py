@@ -12,7 +12,9 @@ from typing import Tuple
 import torch
 
 
-def rand_bbox(width: int, height: int, lam: float, generator: torch.Generator | None = None) -> Tuple[int, int, int, int]:
+def rand_bbox(
+    width: int, height: int, lam: float, generator: torch.Generator | None = None
+) -> Tuple[int, int, int, int]:
     """Random box for CutMix."""
     cut_ratio = (1.0 - lam) ** 0.5
     cut_w, cut_h = int(width * cut_ratio), int(height * cut_ratio)

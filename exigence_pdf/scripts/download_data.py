@@ -44,7 +44,9 @@ def main(argv: list[str] | None = None) -> int:
         "valid": args.valid_per_class if args.valid_per_class is not None else cfg.data.valid_per_class,
         "test": args.test_per_class if args.test_per_class is not None else cfg.data.test_per_class,
     }
-    root = prepare_dataset(cfg, zip_path=Path(args.zip) if args.zip else None, force=args.force, per_class=per_class)
+    root = prepare_dataset(
+        cfg, zip_path=Path(args.zip) if args.zip else None, force=args.force, per_class=per_class
+    )
     print(f"Dataset ready at {root}")
     return 0
 

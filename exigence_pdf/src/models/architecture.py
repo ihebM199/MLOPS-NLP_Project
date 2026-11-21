@@ -120,9 +120,7 @@ class AdaptiveFusionDetector(nn.Module):
         formula is reproduced with ``numpy.fft`` in the ONNX/API path.
         """
         with torch.autocast(device_type=x.device.type, enabled=False):
-            spectrum = torch.fft.fftshift(
-                torch.fft.fft2(x.float(), dim=(-2, -1)), dim=(-2, -1)
-            )
+            spectrum = torch.fft.fftshift(torch.fft.fft2(x.float(), dim=(-2, -1)), dim=(-2, -1))
             return torch.log1p(torch.abs(spectrum))
 
     # ------------------------------------------------------------------ #

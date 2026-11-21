@@ -209,8 +209,8 @@ class OnnxRunner:
         images = np.asarray(images, dtype=np.float32)
         feed = {self.image_input: images}
         if self.freq_input:
-            feed[self.freq_input] = frequency_input_numpy(images) if freq is None else np.asarray(
-                freq, dtype=np.float32
+            feed[self.freq_input] = (
+                frequency_input_numpy(images) if freq is None else np.asarray(freq, dtype=np.float32)
             )
         names = [o.name for o in self.session.get_outputs()]
         outputs = self.session.run(names, feed)
@@ -275,9 +275,7 @@ def check_parity(
         "tolerance": tolerance,
         "passed": bool(diff.max() < tolerance and agreement == 1.0),
         "onnx_path": str(onnx_path),
-        "max_abs_gate_diff": float(
-            np.abs(w_s.cpu().numpy().ravel() - outputs["w_spatial"].ravel()).max()
-        ),
+        "max_abs_gate_diff": float(np.abs(w_s.cpu().numpy().ravel() - outputs["w_spatial"].ravel()).max()),
     }
     from src.utils.paths import PROJECT_ROOT
 
@@ -309,9 +307,11 @@ def export_all_variants(
         from src.utils.paths import PROJECT_ROOT
 
         base = PROJECT_ROOT / base
-    variants: Dict[str, Any] = {"fp32": {"path": str(export_onnx(
-        model, base, image_size=cfg.data.image_size, opset=cfg.export.opset
-    ))}}
+    variants: Dict[str, Any] = {
+        "fp32": {
+            "path": str(export_onnx(model, base, image_size=cfg.data.image_size, opset=cfg.export.opset))
+        }
+    }
     if cfg.export.fp16:
         variants["fp16"] = {"path": str(convert_fp16(base))}
     if cfg.export.int8 and not skip_int8:
@@ -370,14 +370,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     report = export_all_variants(model, cfg, skip_int8=args.skip_int8)
     report["checkpoint"] = str(checkpoint)
     report["backbone"] = info["backbone"]
-    print(json.dumps(
-        {
-            "variants": {k: v.get("size_mb") for k, v in report["variants"].items()},
-            "parity_passed": report["parity"]["passed"],
-            "max_abs_logit_diff": report["parity"]["max_abs_logit_diff"],
-        },
-        indent=2,
-    ))
+    print(
+        json.dumps(
+            {
+                "variants": {k: v.get("size_mb") for k, v in report["variants"].items()},
+                "parity_passed": report["parity"]["passed"],
+                "max_abs_logit_diff": report["parity"]["max_abs_logit_diff"],
+            },
+            indent=2,
+        )
+    )
     return 0 if report["parity"]["passed"] else 2
 
 

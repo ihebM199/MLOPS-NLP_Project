@@ -48,9 +48,7 @@ def compute_metrics(
     return metrics
 
 
-def threshold_metrics(
-    y_true: np.ndarray, y_prob: np.ndarray, threshold: float = 0.5
-) -> Dict[str, float]:
+def threshold_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float = 0.5) -> Dict[str, float]:
     """Metrics obtained by thresholding P(fake) at ``threshold``."""
     y_true = np.asarray(y_true).astype(int)
     y_prob = np.asarray(y_prob, dtype=float)
@@ -72,7 +70,12 @@ def calibrate_threshold(
     y_true = np.asarray(y_true).astype(int)
     y_prob = np.asarray(y_prob, dtype=float)
     precision, recall, thresholds = precision_recall_curve(y_true, y_prob)
-    f1 = np.divide(2 * precision * recall, precision + recall, out=np.zeros_like(precision), where=(precision + recall) > 0)
+    f1 = np.divide(
+        2 * precision * recall,
+        precision + recall,
+        out=np.zeros_like(precision),
+        where=(precision + recall) > 0,
+    )
     if min_recall is not None:
         allowed = recall >= min_recall
         if allowed.any():

@@ -61,7 +61,9 @@ def load_runs(path: str | Path, include_ablations: bool) -> tuple[dict[str, Any]
     return payload.get("common", {}), runs
 
 
-def build_config(base_config: str, common: dict[str, Any], run: dict[str, Any], *, quick_demo: bool, no_mlflow: bool):
+def build_config(
+    base_config: str, common: dict[str, Any], run: dict[str, Any], *, quick_demo: bool, no_mlflow: bool
+):
     cfg = load_config(base_config, quick_demo=quick_demo)
     for key, value in common.items():
         for dotted in COMMON_OVERRIDES.get(key, ()):

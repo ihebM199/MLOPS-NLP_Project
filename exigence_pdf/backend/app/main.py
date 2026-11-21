@@ -106,8 +106,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except Exception:  # noqa: BLE001 - logged by the exception handler
             duration = (time.perf_counter() - started) * 1000
             LOGGER.exception(
-                json.dumps({"method": request.method, "path": request.url.path, "duration_ms": round(duration, 2),
-                            "status": 500})
+                json.dumps(
+                    {
+                        "method": request.method,
+                        "path": request.url.path,
+                        "duration_ms": round(duration, 2),
+                        "status": 500,
+                    }
+                )
             )
             raise
         duration = (time.perf_counter() - started) * 1000
@@ -131,7 +137,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def handle_api_error(request: Request, exc: APIError):  # noqa: ARG001
         return JSONResponse(
             status_code=exc.status_code,
-            content=ErrorResponse(error=exc.code, detail=exc.detail, status_code=exc.status_code).model_dump(),
+            content=ErrorResponse(
+                error=exc.code, detail=exc.detail, status_code=exc.status_code
+            ).model_dump(),
         )
 
     @app.exception_handler(Exception)
@@ -147,8 +155,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # ------------------------------------------------------------------ #
     # Endpoints
     # ------------------------------------------------------------------ #
-    @app.get("/health", response_model=HealthResponse, tags=["monitoring"],
-             summary="Service and model health", responses={503: {"model": ErrorResponse}})
+    @app.get(
+        "/health",
+        response_model=HealthResponse,
+        tags=["monitoring"],
+        summary="Service and model health",
+        responses={503: {"model": ErrorResponse}},
+    )
     async def health(request: Request):
         state: InferenceRegistry = request.app.state.registry
         payload = HealthResponse(
@@ -165,17 +178,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return JSONResponse(status_code=503, content=payload.model_dump())
         return payload
 
-    @app.get("/model/metadata", response_model=ModelMetadata, tags=["model"],
-             summary="Model card, metrics and decision threshold")
+    @app.get(
+        "/model/metadata",
+        response_model=ModelMetadata,
+        tags=["model"],
+        summary="Model card, metrics and decision threshold",
+    )
     async def model_metadata(request: Request):
         state: InferenceRegistry = request.app.state.registry
         return state.metadata_payload()
 
-    @app.post("/predict", response_model=PredictionResponse, tags=["inference"],
-              summary="Classify a face image (REAL / FAKE)",
-              responses={400: {"model": ErrorResponse}, 413: {"model": ErrorResponse},
-                         415: {"model": ErrorResponse}, 422: {"model": ErrorResponse},
-                         503: {"model": ErrorResponse}})
+    @app.post(
+        "/predict",
+        response_model=PredictionResponse,
+        tags=["inference"],
+        summary="Classify a face image (REAL / FAKE)",
+        responses={
+            400: {"model": ErrorResponse},
+            413: {"model": ErrorResponse},
+            415: {"model": ErrorResponse},
+            422: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+    )
     async def predict(request: Request, file: UploadFile = File(..., description="JPEG/PNG/WebP/BMP image")):
         state: InferenceRegistry = request.app.state.registry
         data = await file.read(settings.max_upload_bytes + 1)
@@ -189,12 +214,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         result = await run_in_threadpool(state.predict, image)
         return PredictionResponse(**result)
 
-    @app.post("/predict/visualize", tags=["inference"],
-              summary="Grad-CAM overlay (PNG by default, JSON+base64 with format=json)",
-              response_class=Response,
-              responses={200: {"content": {"image/png": {}}, "description": "PNG overlay (format=png)"},
-                         400: {"model": ErrorResponse}, 413: {"model": ErrorResponse},
-                         415: {"model": ErrorResponse}, 503: {"model": ErrorResponse}})
+    @app.post(
+        "/predict/visualize",
+        tags=["inference"],
+        summary="Grad-CAM overlay (PNG by default, JSON+base64 with format=json)",
+        response_class=Response,
+        responses={
+            200: {"content": {"image/png": {}}, "description": "PNG overlay (format=png)"},
+            400: {"model": ErrorResponse},
+            413: {"model": ErrorResponse},
+            415: {"model": ErrorResponse},
+            503: {"model": ErrorResponse},
+        },
+    )
     async def predict_visualize(
         request: Request,
         file: UploadFile = File(..., description="JPEG/PNG/WebP/BMP image"),
@@ -213,7 +245,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             max_bytes=settings.max_upload_bytes,
         )
         if format == "json":
-            encoded, meta = await run_in_threadpool(state.gradcam.visualize_base64, image, target=target, alpha=alpha)
+            encoded, meta = await run_in_threadpool(
+                state.gradcam.visualize_base64, image, target=target, alpha=alpha
+            )
             total_ms = (time.perf_counter() - started) * 1000
             return VisualizationResponse(
                 label=meta["label"],

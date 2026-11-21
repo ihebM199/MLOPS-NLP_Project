@@ -54,7 +54,9 @@ def hash_paths(paths: Iterable[str | Path], *, limit: int | None = None) -> dict
     return result
 
 
-def find_cross_split_duplicates(split_paths: Mapping[str, Sequence[str]], *, limit: int | None = None) -> dict:
+def find_cross_split_duplicates(
+    split_paths: Mapping[str, Sequence[str]], *, limit: int | None = None
+) -> dict:
     """Return ``{"hashes": [...], "pairs": [...], "n_duplicates": int}``."""
     hashes: dict[str, dict[str, list[str]]] = {}
     for split, paths in split_paths.items():

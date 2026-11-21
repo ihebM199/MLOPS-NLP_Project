@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /**
  * Webcam capture + optional continuous inference (~1 img/s).
@@ -69,7 +69,7 @@ export default function Webcam({ onCapture, busy = false }) {
     }
   }
 
-  const grabFrame = () => {
+  const grabFrame = useCallback(() => {
     const video = videoRef.current
     if (!video || !video.videoWidth) return null
     const size = Math.min(video.videoWidth, video.videoHeight)
@@ -97,9 +97,9 @@ export default function Webcam({ onCapture, busy = false }) {
         0.92,
       )
     })
-  }
+  }, [])
 
-  const capture = async () => {
+  const capture = useCallback(async () => {
     if (inFlightRef.current || busyRef.current) return
     const file = await grabFrame()
     if (!file) return
@@ -109,7 +109,7 @@ export default function Webcam({ onCapture, busy = false }) {
     } finally {
       inFlightRef.current = false
     }
-  }
+  }, [grabFrame])
 
   useEffect(() => {
     if (!streaming || !continuous) return undefined
@@ -117,7 +117,7 @@ export default function Webcam({ onCapture, busy = false }) {
       if (!inFlightRef.current && !busyRef.current) capture()
     }, 1100)
     return () => clearInterval(timer)
-  }, [streaming, continuous])
+  }, [streaming, continuous, capture])
 
   return (
     <div className="space-y-3">
