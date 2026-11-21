@@ -218,7 +218,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         "/predict/visualize",
         tags=["inference"],
         summary="Grad-CAM overlay (PNG by default, JSON+base64 with format=json)",
-        response_class=Response,
         responses={
             200: {"content": {"image/png": {}}, "description": "PNG overlay (format=png)"},
             400: {"model": ErrorResponse},
@@ -249,7 +248,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 state.gradcam.visualize_base64, image, target=target, alpha=alpha
             )
             total_ms = (time.perf_counter() - started) * 1000
-            return VisualizationResponse(
+            payload = VisualizationResponse(
                 label=meta["label"],
                 prob_fake=meta["prob_fake"],
                 prob_real=1.0 - meta["prob_fake"],
@@ -262,6 +261,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "total_server_ms": round(total_ms, 2),
                 },
             )
+            return JSONResponse(content=payload.model_dump())
         png, meta = await run_in_threadpool(state.gradcam.visualize, image, target=target, alpha=alpha)
         return Response(
             content=png,
