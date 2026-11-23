@@ -13,16 +13,25 @@ if command -v dvc >/dev/null 2>&1 && [ -f data/raw.dvc ]; then
   dvc pull || echo "[demo] WARNING: dvc pull failed (remote not configured?)"
 fi
 
-if [ ! -f models/deepfake_fusion.onnx ]; then
-  cat >&2 <<'EOF'
-[demo] ERROR: models/deepfake_fusion.onnx is missing.
+if [ ! -f models/deepfake_fusion.onnx ] || [ ! -f models/AdaptiveFusion_best_model.pth ]; then
+  echo "[demo] generating CI-only dummy ONNX and PyTorch checkpoints..."
+  if docker run --rm \
+    --user root \
+    --volume "$PWD:/workspace" \
+    --workdir /workspace \
+    --env PYTHONPATH=/workspace \
+    deepfake-adaptive-fusion-backend:latest \
+    python scripts/make_dummy_model.py --out models; then
+    echo "[demo] dummy artefacts created"
+  else
+    cat >&2 <<'EOF'
+[demo] ERROR: demo artefacts could not be created.
        Train + export first:
          python -m src.models.train --config params.yaml
          python -m src.models.evaluate --config params.yaml --export
-       or create a CI-only dummy model:
-         python scripts/make_dummy_model.py --out models
 EOF
-  exit 1
+    exit 1
+  fi
 fi
 
 echo "[demo] starting backend + frontend + MLflow (Ctrl+C to stop)..."

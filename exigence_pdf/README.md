@@ -63,7 +63,7 @@ dvc pull                       # données + checkpoint + ONNX (remote DVC config
 docker compose up --build      # frontend + backend + MLflow
 ```
 
-Sans remote DVC (démo locale avec le checkpoint déjà présent) :
+Sans remote DVC (génère automatiquement les artefacts factices de démonstration) :
 
 ```bash
 ./scripts/setup_demo.sh

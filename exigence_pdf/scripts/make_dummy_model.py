@@ -67,6 +67,23 @@ def make_sample_image(path: Path, size: tuple[int, int] = (320, 240)) -> Path:
     return path
 
 
+def build_dummy_checkpoint(path: Path) -> Path:
+    """Create a small state_dict compatible with the Grad-CAM PyTorch loader."""
+    import torch
+
+    from src.models.architecture import AdaptiveFusionDetector
+
+    model = AdaptiveFusionDetector(
+        backbone="efficientnetv2_rw_s",
+        pretrained=False,
+        projection_dim=128,
+        mode="fusion",
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save(model.state_dict(), path)
+    return path
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Create a dummy ONNX model for smoke tests.")
     parser.add_argument("--out", default="models")
@@ -74,17 +91,22 @@ def main(argv: list[str] | None = None) -> int:
 
     out = Path(args.out)
     onnx_path = build_dummy_onnx(out / "deepfake_fusion.onnx")
+    checkpoint_path = build_dummy_checkpoint(out / "AdaptiveFusion_best_model.pth")
     sample = make_sample_image(out / "sample.jpg")
     config = {
         "architecture": "AdaptiveFusionDetector",
         "mode": "fusion",
-        "backbone": "dummy",
+        "backbone": "efficientnetv2_rw_s",
         "image_size": 224,
         "parameters": 0,
-        "note": "Dummy model for CI smoke tests only — not a trained detector.",
+        "note": "Dummy ONNX and PyTorch checkpoints for CI smoke tests only — not a trained detector.",
     }
     (out / "model_config.json").write_text(json.dumps(config, indent=2), "utf-8")
-    print(f"Dummy ONNX: {onnx_path}\nSample image: {sample}")
+    print(
+        f"Dummy ONNX: {onnx_path}\n"
+        f"Dummy checkpoint: {checkpoint_path}\n"
+        f"Sample image: {sample}"
+    )
     return 0
 
 
