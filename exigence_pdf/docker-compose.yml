@@ -2,9 +2,11 @@
 # One command starts the whole stack:
 #   docker compose up --build
 #
-#   frontend -> http://localhost:3000
-#   backend  -> http://localhost:8000/docs
-#   MLflow   -> http://localhost:5000
+#   frontend  -> http://localhost:3000
+#   backend   -> http://localhost:8000/docs
+#   MLflow    -> http://localhost:5000
+#   Prometheus-> http://localhost:9090
+#   Grafana   -> http://localhost:3001
 #
 # Models are mounted read-only (never committed, fetched with `dvc pull`).
 # ---------------------------------------------------------------------------
@@ -32,6 +34,7 @@ services:
     volumes:
       - ./models:/app/models:ro
       - ./reports:/app/reports:ro
+      - monitoring-data:/app/monitoring_data
     ports:
       - "8000:8000"
     depends_on:
@@ -73,5 +76,43 @@ services:
       - mlflow-data:/mlflow
     restart: unless-stopped
 
+  # -------------------------------------------------------------------------
+  # Monitoring: Prometheus + Grafana
+  # -------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3001:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   mlflow-data:
+  prometheus-data:
+  grafana-data:
+  monitoring-data:

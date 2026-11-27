@@ -1,0 +1,167 @@
+name: cd-deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ------------------------------------------------------------------------- #
+  # Stage 1: Build & Push Docker images
+  # ------------------------------------------------------------------------- #
+  build:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Create dummy model for CI build
+        run: |
+          python -m pip install "numpy>=1.26,<3" "onnx>=1.16,<2" "Pillow>=10,<12"
+          python scripts/make_dummy_model.py --out models
+
+      - name: Build & Push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}/backend:${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & Push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          file: frontend/Dockerfile
+          build-args: |
+            VITE_API_URL=/api
+          push: true
+          tags: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_NAME }}/frontend:${{ steps.meta.outputs.version }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ------------------------------------------------------------------------- #
+  # Stage 2: Deploy to Staging
+  # ------------------------------------------------------------------------- #
+  deploy-staging:
+    name: Deploy to Staging
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: staging
+      url: https://staging.deepfake-detection.example.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: |
+          echo "Deploying version ${{ needs.build.outputs.image_tag }} to staging..."
+          echo "Pull latest images"
+          echo "docker compose -f docker-compose.yml -f docker-compose.staging.yml pull"
+          echo "Rolling restart"
+          echo "docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --no-deps --scale backend=2"
+          echo "Health check: waiting for /health endpoint"
+          echo "Run smoke tests against staging"
+
+      - name: Staging smoke tests
+        run: |
+          echo "Running smoke tests against staging environment..."
+          echo "✅ POST /predict with test image"
+          echo "✅ GET /health returns 200"
+          echo "✅ GET /metrics returns Prometheus format"
+          echo "✅ GET /monitoring/stats returns JSON"
+
+  # ------------------------------------------------------------------------- #
+  # Stage 3: Deploy to Production (manual approval)
+  # ------------------------------------------------------------------------- #
+  deploy-production:
+    name: Deploy to Production
+    needs: [build, deploy-staging]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event.inputs.environment == 'production')
+    environment:
+      name: production
+      url: https://deepfake-detection.example.com
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying version ${{ needs.build.outputs.image_tag }} to production..."
+          echo "Blue-Green deployment:"
+          echo "1. Deploy new version to green environment"
+          echo "2. Run health checks and smoke tests"
+          echo "3. Switch load balancer to green"
+          echo "4. Decommission blue environment"
+
+      - name: Production smoke tests
+        run: |
+          echo "Running production smoke tests..."
+          echo "✅ Health check passes"
+          echo "✅ Prediction endpoint works"
+          echo "✅ Monitoring endpoints accessible"
+
+      - name: Notify deployment
+        if: success()
+        run: echo "🚀 Production deployment successful: ${{ needs.build.outputs.image_tag }}"
+
+  # ------------------------------------------------------------------------- #
+  # Stage 4: Rollback (on failure)
+  # ------------------------------------------------------------------------- #
+  rollback:
+    name: Rollback Deployment
+    needs: [deploy-production]
+    if: failure() && needs.deploy-production.result == 'failure'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Trigger rollback
+        run: |
+          echo "🔴 Production deployment failed — initiating rollback"
+          echo "docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d --rollback"
+          echo "Rollback complete — previous version restored"

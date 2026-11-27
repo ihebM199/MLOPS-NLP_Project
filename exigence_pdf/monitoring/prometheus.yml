@@ -1,0 +1,27 @@
+# Prometheus configuration for Deepfake Adaptive Fusion
+# Scrapes metrics from the backend API's /metrics endpoint
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Backend API metrics
+  - job_name: 'deepfake-backend'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['backend:8000']
+        labels:
+          service: 'deepfake-api'
+          environment: 'production'
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['localhost:9090']
+
+# Alerting rules (optional - for future use)
+# rule_files:
+#   - 'alert_rules.yml'

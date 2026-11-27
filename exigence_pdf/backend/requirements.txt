@@ -22,3 +22,7 @@ torch==2.6.0
 torchvision==0.21.0
 timm>=1.0.9,<2
 matplotlib>=3.8,<4
+
+# Monitoring & observability
+prometheus-client>=0.20,<1
+psutil>=5.9,<7
