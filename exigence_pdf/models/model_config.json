@@ -1,0 +1,30 @@
+{
+  "architecture": "AdaptiveFusionDetector",
+  "mode": "fusion",
+  "backbone": "convnext_tiny",
+  "spatial_features_dim": 768,
+  "freq_features_dim": 3136,
+  "projection_dim": 768,
+  "parameters": 31241322,
+  "active_parameters": 31241322,
+  "residual_scale": 0.5,
+  "normalization": {
+    "mean": [
+      0.485,
+      0.456,
+      0.406
+    ],
+    "std": [
+      0.229,
+      0.224,
+      0.225
+    ]
+  },
+  "label2id": {
+    "real": 0,
+    "fake": 1
+  },
+  "decision_rule": "logit > 0 -> fake (label 1); P(fake) = sigmoid(logit)",
+  "image_size": 224,
+  "weights_file": "AdaptiveFusion_best_model.pth"
+}

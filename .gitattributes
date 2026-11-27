@@ -1,0 +1,2 @@
+exigence_pdf/models/deepfake_fusion.onnx filter=lfs diff=lfs merge=lfs -text
+exigence_pdf/models/AdaptiveFusion_best_model.pth filter=lfs diff=lfs merge=lfs -text
