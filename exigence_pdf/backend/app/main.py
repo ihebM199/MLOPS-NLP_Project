@@ -36,6 +36,14 @@ from backend.app.settings import Settings, get_settings
 from backend.app.validation import APIError, decode_image
 from src.utils.logging import get_logger
 
+# Monitoring imports
+try:
+    from src.monitoring.api import setup_monitoring
+    from src.monitoring.metrics import get_metrics_collector
+    _MONITORING_AVAILABLE = True
+except ImportError:
+    _MONITORING_AVAILABLE = False
+
 LOGGER = get_logger("backend.api")
 
 DESCRIPTION = """
@@ -211,7 +219,41 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content_type=file.content_type,
             max_bytes=settings.max_upload_bytes,
         )
+        started = time.perf_counter()
         result = await run_in_threadpool(state.predict, image)
+        total_ms = (time.perf_counter() - started) * 1000
+
+        # --- Monitoring: log prediction and record metrics ---
+        if _MONITORING_AVAILABLE:
+            try:
+                metrics = get_metrics_collector()
+                pred_logger = getattr(request.app.state, "prediction_logger", None)
+                prob_fake = result.get("prob_fake", result.get("prob_fake", 0.5))
+                label = result.get("label", "unknown")
+                w = result.get("fusion_weights", {})
+                latency = result.get("latency", {})
+
+                if metrics.enabled:
+                    metrics.record_prediction(
+                        label=label,
+                        confidence=prob_fake,
+                        latency_total=total_ms / 1000.0,
+                        latency_inference=latency.get("inference_ms", 0) / 1000.0,
+                        latency_preprocess=latency.get("preprocess_ms", 0) / 1000.0,
+                        w_spatial=w.get("w_spatial", 0.5),
+                        w_frequency=w.get("w_frequency", 0.5),
+                    )
+                if pred_logger:
+                    pred_logger.log_prediction(
+                        prediction={"label": label, "confidence": prob_fake},
+                        metadata={
+                            "latency_ms": round(total_ms, 2),
+                            "model_version": settings.model_version,
+                        },
+                    )
+            except Exception:
+                pass  # Monitoring must never break inference
+
         return PredictionResponse(**result)
 
     @app.post(
@@ -291,6 +333,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "health": "/health",
                 "frontend": "not built — run `npm run build` in frontend/ (then restart the API)",
             }
+
+    # ------------------------------------------------------------------ #
+    # Monitoring setup (Prometheus + prediction logging + drift detection)
+    # ------------------------------------------------------------------ #
+    if _MONITORING_AVAILABLE:
+        try:
+            setup_monitoring(app, prediction_log_dir="monitoring_data")
+            LOGGER.info("Monitoring endpoints enabled: /metrics, /monitoring/*")
+        except Exception as exc:
+            LOGGER.warning("Could not setup monitoring: %s", exc)
 
     return app
 

@@ -246,11 +246,15 @@ Le projet ne contient pas seulement un modèle : il industrialise tout le cycle 
 | Git | versionne le code, les tests, la configuration |
 | DVC | versionne les données et les gros artefacts (poids, ONNX) |
 | MLflow | suit les expériences, les métriques, les paramètres et les artefacts |
+| Prefect | orchestre le pipeline (lance les étapes dans le bon ordre) |
+| Prometheus | collecte les métriques du système et du modèle |
+| Grafana | affiche les métriques dans des tableaux de bord visuels |
+| Evidently AI | détecte quand les données changent trop (data drift) |
 | ONNX | format portable du modèle pour l'inférence |
 | FastAPI | expose le modèle sous forme d'API HTTP |
 | React + Vite | interface utilisateur de démonstration |
-| Docker Compose | lance frontend + backend + MLflow ensemble |
-| GitHub Actions | lint, tests, couverture, build frontend, smoke test Docker |
+| Docker Compose | lance tous les services ensemble |
+| GitHub Actions | CI (tests), CD (déploiement), CT (réentraînement) |
 | Pytest / Vitest | tests backend et frontend |
 
 ### Le pipeline DVC
@@ -280,6 +284,179 @@ DVC ne remplace pas MLflow :
 
 Les deux sont complémentaires.
 
+### L'orchestration avec Prefect
+
+DVC lance les étapes dans le bon ordre, mais il ne gère pas bien les erreurs complexes
+ni les reprises. C'est là qu'intervient **Prefect** (`src/orchestration/`).
+
+Prefect enveloppe chaque étape du pipeline dans une **tâche** avec des règles :
+
+```
+Tâche              | Essais max | Délai entre essais
+-------------------|------------|-------------------
+prepare_data       | 2          | 30 secondes
+train_model        | 1          | 60 secondes
+evaluate_model     | 1          | 30 secondes
+export_onnx        | 2          | 30 secondes
+register_model     | 2          | 15 secondes
+check_model_quality| 0 (gate)   | —
+```
+
+**Exemple simple** : si le téléchargement du dataset échoue à cause d'une panne réseau,
+Prefect attend 30 secondes puis réessaye. Si ça échoue encore, il réessaye une dernière
+fois. Après 3 échecs, la tâche est marquée comme échouée et on peut voir pourquoi dans
+l'interface Prefect.
+
+**La tâche `check_model_quality`** est différente : elle n'a **aucun retry**. C'est un
+**contrôle qualité** (une « gate »). Si le modèle obtenu a un AUC < 0.85 ou un F1 < 0.80,
+le pipeline s'arrête. On ne veut pas promouvoir un mauvais modèle.
+
+Deux flows existent :
+- **main_pipeline_flow** : le pipeline complet (prepare → train → evaluate → export → register)
+- **retrain_flow** : déclenché quand on détecte que le modèle devient mauvais (voir Monitoring)
+
+Commande pour lancer le pipeline via Prefect :
+
+```bash
+python -m src.orchestration.flows --config params.yaml --register
+```
+
+### Le monitoring (Prometheus + Grafana + Evidently AI)
+
+En production, il faut surveiller deux choses :
+1. **Le système** : est-ce que le serveur va bien ? Combien de requêtes par seconde ? Quelle latence ?
+2. **Le modèle** : est-ce que les prédictions sont toujours fiables ? Les données n'ont-elles pas changé ?
+
+#### Prometheus (métriques système et modèle)
+
+Prometheus est un outil qui **collecte des chiffres** à intervalles réguliers.
+Le backend expose un endpoint `/metrics` qui donne tous ces chiffres au format texte.
+
+Voici ce qu'on mesure :
+
+| Ce qu'on mesure | Pourquoi c'est important |
+|---|---|
+| Nombre de requêtes HTTP | Savoir si l'API est utilisée |
+| Temps de réponse | Détecter les ralentissements |
+| Utilisation CPU et mémoire | Savoir si le serveur sature |
+| Nombre de prédictions FAKE/REAL | Comprendre l'usage |
+| Confiance des prédictions | Détecter si le modèle est trop sûr ou trop incertain |
+| Latence d'inférence | Vérifier que le modèle reste rapide |
+| Poids de fusion (spatial/fréquentiel) | Comprendre quel flux est privilégié |
+| Score de data drift | Savoir si les données ont changé |
+
+#### Grafana (tableaux de bord visuels)
+
+Grafana **lit les données de Prometheus** et les affiche dans des graphiques.
+Accessible sur `http://localhost:3001` (identifiants : admin / admin).
+
+On y voit :
+- Combien de requêtes par minute
+- Le temps de réponse (p95 = les 95% les plus rapides)
+- Le nombre de prédictions FAKE vs REAL
+- L'utilisation CPU et mémoire avec des jauges colorées (vert → jaune → rouge)
+- La distribution des confiances
+- Les poids de fusion spatial vs fréquentiel
+- Le score de dérive des données
+
+#### Evidently AI (détection de data drift)
+
+Le **data drift**, c'est quand les données en production deviennent différentes de celles
+utilisées à l'entraînement. Par exemple, si le modèle a été entraîné sur des photos de
+bonne qualité et qu'en production il reçoit des images très compressées, ses prédictions
+deviennent moins fiables.
+
+Evidently AI **compare** les données récentes aux données d'entraînement avec des tests
+statistiques (KS test, PSI). Si le score de dérive dépasse 0.3 (30% des features ont
+dérivé), on sait qu'il faut probablement **réentraîner le modèle**.
+
+Commande pour vérifier le drift :
+
+```bash
+curl -X POST http://localhost:8000/monitoring/drift
+```
+
+#### Prediction Logger
+
+Chaque prédiction faite par l'API est **enregistrée** dans un fichier `monitoring_data/predictions.jsonl`.
+Ce fichier contient :
+- La date et l'heure
+- Le résultat (label, confiance)
+- Les poids de fusion
+- La latence
+- La version du modèle
+
+Ces logs servent à :
+- Analyser a posteriori la distribution des prédictions
+- Détecter le drift avec Evidently AI
+- Avoir une trace d'audit
+
+### La Continuous Integration (CI)
+
+La CI, c'est **tester automatiquement** le code à chaque modification.
+
+Deux workflows GitHub Actions s'exécutent à chaque push ou pull request :
+
+**`ci-tests.yml`** — Tests de qualité du code :
+- `black --check` : vérifie que le code est bien formaté
+- `flake8` : vérifie qu'il n'y a pas d'erreurs de style
+- `pytest backend` : lance les tests du backend avec couverture ≥ 80%
+- `pytest tests` : lance les tests d'anti-fuite et de contrat ONNX
+- `npm run lint && npm test && npm run build` : vérifie le frontend
+
+**`docker-build.yml`** — Test de la stack Docker :
+- Construit les images Docker
+- Démarre la stack complète
+- Vérifie que `/health` répond 200
+- Lance une prédiction de test
+- Vérifie que le frontend est accessible
+
+**En résumé** : si un développeur casse quelque chose, la CI le détecte immédiatement.
+
+### La Continuous Delivery/Deployment (CD)
+
+Le CD, c'est **déployer automatiquement** quand le code est validé.
+
+Le workflow `cd-deploy.yml` fait 4 étapes :
+
+```
+1. BUILD         → Construit les images Docker et les pousse sur GitHub Container Registry
+2. STAGING       → Déploie sur l'environnement de test, lance des smoke tests
+3. PRODUCTION    → Déploie sur l'environnement réel (après validation humaine)
+4. ROLLBACK      → Si la production échoue, revient automatiquement à la version précédente
+```
+
+**Exemple de scénario** :
+1. Un développeur pousse du code sur `main`
+2. La CI teste le code → tout passe ✅
+3. Le CD construit les images Docker
+4. Le CD déploie en staging → smoke tests ✅
+5. Le CD déploie en production (avec validation humaine)
+6. Si quelque chose plante → rollback automatique
+
+**En résumé** : on peut déployer en un clic, et si ça se passe mal, on revient en arrière automatiquement.
+
+### La Continuous Training (CT)
+
+Le CT, c'est **réentraîner automatiquement** le modèle quand il devient moins bon.
+
+Le workflow `continuous-training.yml` fait ceci :
+
+```
+1. CHECK DRIFT    → Vérifie si les données ont changé ou si les métriques ont baissé
+2. RETRAIN        → Si nécessaire, relance le pipeline complet (Prefect)
+3. VALIDATE       → Vérifie que le nouveau modèle est au moins aussi bon
+4. PROMOTE        → Enregistre le nouveau modèle dans MLflow Registry
+5. DEPLOY         → Lance le CD pour déployer le nouveau modèle
+```
+
+**Quand le CT se déclenche-t-il ?**
+- **Automatiquement** : tous les lundis à 6h du matin (vérification de routine)
+- **Manuellement** : un développeur peut lancer `gh workflow run continuous-training.yml`
+- **Par webhook** : si le monitoring détecte un drift important, il peut déclencher le CT
+
+**En résumé** : le modèle se met à jour tout seul quand c'est nécessaire, sans intervention manuelle.
+
 ---
 
 ## 7. Les interfaces et les ports
@@ -288,10 +465,12 @@ Le projet expose plusieurs services. Il est très important de ne pas les confon
 
 | Port | Service | Rôle | Adresse |
 |---|---|---|---|
-| `3000` | Frontend React servi par nginx | interface utilisateur pour importer une image | http://localhost:3000 |
-| `8000` | Backend FastAPI | API de prédiction, santé, métadonnées, Grad-CAM | http://localhost:8000/docs |
+| `3000` | Frontend React (nginx) | interface utilisateur pour importer une image | http://localhost:3000 |
+| `8000` | Backend FastAPI | API de prédiction, santé, métadonnées, Grad-CAM, **monitoring** | http://localhost:8000/docs |
 | `5000` | MLflow | interface de suivi des expériences | http://localhost:5000 |
-| `5173` | Vite | serveur de développement frontend uniquement | http://localhost:5173 |
+| `9090` | Prometheus | collecte et stockage des métriques | http://localhost:9090 |
+| `3001` | Grafana | tableaux de bord visuels (admin/admin) | http://localhost:3001 |
+| `5173` | Vite (dev uniquement) | serveur de développement frontend | http://localhost:5173 |
 
 ### Qui parle à qui ?
 
@@ -310,17 +489,23 @@ Backend FastAPI :8000
    +--> métadonnées du modèle : models/model_config.json
    +--> métriques : reports/metrics.json
    +--> PyTorch pour Grad-CAM (chargé seulement si demandé)
+   +--> Prediction Logger (enregistre chaque prédiction)
+   +--> /metrics (expose les métriques à Prometheus)
 
-MLflow :5000  <-- outil séparé, utilisé pendant l'entraînement/évaluation
+Prometheus :9090  <-- scrape les métriques de :8000 toutes les 10 secondes
+Grafana :3001     <-- lit les données de Prometheus, affiche les dashboards
+MLflow :5000      <-- outil séparé, utilisé pendant l'entraînement/évaluation
 ```
 
 ### Différence essentielle
 
 - Le **frontend 3000** est l'interface pour l'utilisateur final : il dépose une image
   et voit REAL/FAKE.
-- Le **backend 8000** fait le calcul réel et expose aussi Swagger.
+- Le **backend 8000** fait le calcul réel et expose aussi Swagger + les métriques.
 - **MLflow 5000** n'est pas l'application de détection. C'est le « carnet de laboratoire »
   du projet : il montre les expériences, les courbes, les métriques et les fichiers produits.
+- **Prometheus 9090** collecte les chiffres de performance du système et du modèle.
+- **Grafana 3001** affiche ces chiffres dans des graphiques jolis et faciles à lire.
 
 ---
 
@@ -554,8 +739,15 @@ Le backend est dans `backend/app/`.
 | `/model/metadata` | GET | fiche modèle, seuil, métriques, limites |
 | `/predict` | POST | prédiction REAL/FAKE d'une image |
 | `/predict/visualize` | POST | carte Grad-CAM en PNG ou JSON/base64 |
+| `/metrics` | GET | **métriques Prometheus** (CPU, mémoire, prédictions, latence…) |
+| `/monitoring/stats` | GET | **statistiques des prédictions** loguées |
+| `/monitoring/drift` | POST | **lancer l'analyse de dérive des données** |
+| `/monitoring/log-prediction` | POST | **logger manuellement une prédiction** |
 | `/docs` | GET | documentation Swagger interactive |
 | `/redoc` | GET | documentation alternative |
+
+**Note** : les endpoints en gras sont les nouveaux endpoints de monitoring. Ils sont
+essentiels pour le suivi en production.
 
 ### Fonctionnement de `/predict`
 
@@ -565,7 +757,8 @@ Le backend est dans `backend/app/`.
 4. calcule la FFT ;
 5. exécute le modèle ONNX ;
 6. applique le seuil ;
-7. renvoie :
+7. **enregistre la prédiction** dans le monitoring (Prometheus + fichier JSONL) ;
+8. renvoie :
 
 ```json
 {
@@ -583,6 +776,16 @@ Le backend est dans `backend/app/`.
   }
 }
 ```
+
+**Important pour le monitoring** : à chaque appel de `/predict`, le backend :
+- incrémente le compteur `deepfake_predictions_total` (par label FAKE/REAL) ;
+- enregistre la confiance dans l'histogramme `deepfake_prediction_confidence` ;
+- enregistre la latence dans `deepfake_prediction_latency_seconds` ;
+- enregistre les poids de fusion dans `deepfake_fusion_weight_spatial` et `_frequency` ;
+- écrit la prédiction dans `monitoring_data/predictions.jsonl`.
+
+Tout cela se fait automatiquement, sans ralentir la réponse. Le monitoring ne peut
+jamais casser l'inférence.
 
 ### Grad-CAM
 
@@ -632,24 +835,31 @@ En Docker, nginx reçoit `/api/...` et retire le préfixe avant de transmettre a
 
 ---
 
-## 11. Docker et les trois services
+## 11. Docker et les cinq services
 
 `docker compose up --build` lance :
 
 | Service | Image / construction | Port | Rôle |
 |---|---|---|---|
 | `frontend` | build React + nginx | 3000 → 80 | interface utilisateur |
-| `backend` | build Python + FastAPI | 8000 → 8000 | API de prédiction |
+| `backend` | build Python + FastAPI | 8000 → 8000 | API de prédiction + monitoring |
 | `mlflow` | image officielle MLflow | 5000 → 5000 | suivi des expériences |
+| `prometheus` | image officielle Prometheus | 9090 → 9090 | collecte des métriques |
+| `grafana` | image officielle Grafana | 3001 → 3000 | tableaux de bord visuels |
 
 Points importants :
 
 - le backend monte `models/` et `reports/` en lecture seule ;
 - le frontend attend que le backend soit en bonne santé (`depends_on`) ;
 - MLflow possède un volume persistant `mlflow-data` ;
+- Prometheus possède un volume persistant `prometheus-data` ;
+- Grafana possède un volume persistant `grafana-data` ;
 - le backend et MLflow sont sur le même réseau Docker : le backend peut joindre
   `http://mlflow:5000` ;
-- depuis le navigateur de la machine hôte, on utilise `http://localhost:5000`.
+- Prometheus scrape automatiquement `http://backend:8000/metrics` toutes les 10 secondes ;
+- Grafana est pré-configuré pour lire les données de Prometheus ;
+- depuis le navigateur de la machine hôte, on utilise `http://localhost:5000` (MLflow),
+  `http://localhost:9090` (Prometheus) et `http://localhost:3001` (Grafana).
 
 Commandes utiles :
 
@@ -659,9 +869,11 @@ cd /workspaces/MLOPS-NLP_Project/exigence_pdf
 docker compose up --build -d
 docker compose ps
 curl http://localhost:8000/health
+curl http://localhost:8000/metrics          # métriques Prometheus
+curl http://localhost:8000/monitoring/stats # statistiques des prédictions
 docker compose logs -f
-docker compose down        # conserve les données MLflow
-docker compose down -v     # supprime aussi le volume MLflow
+docker compose down        # conserve les données
+docker compose down -v     # supprime aussi les volumes (MLflow, Prometheus, Grafana)
 ```
 
 ---
@@ -744,18 +956,44 @@ Le vrai projet est dans `exigence_pdf/`, pas à la racine du dépôt.
 
 ```
 exigence_pdf/
+├── .github/workflows/
+│   ├── ci-tests.yml            # CI : lint + tests + couverture
+│   ├── docker-build.yml        # CI : build Docker + smoke test
+│   ├── cd-deploy.yml           # CD : build → staging → production → rollback
+│   └── continuous-training.yml # CT : drift check → retrain → validate → deploy
+│
 ├── src/
 │   ├── config.py               # configuration typée depuis params.yaml
-│   ├── tracking.py             # helpers MLflow
+│   ├── tracking.py             # helpers MLflow (log params/métriques, register, promote)
 │   ├── data/                   # dataset, préparation, anti-fuite, transforms
 │   ├── models/                 # architecture, train, evaluate, ONNX, metrics
+│   ├── orchestration/          # Prefect : pipeline complet + retrain, retries, erreurs
+│   │   ├── flows.py            # les flows (main_pipeline_flow, retrain_flow)
+│   │   └── deployment.py       # configuration des déploiements Prefect
+│   ├── monitoring/             # monitoring système et modèle
+│   │   ├── metrics.py          # collecteur Prometheus (CPU, RAM, prédictions, etc.)
+│   │   ├── drift.py            # détection de drift avec Evidently AI + fallback KS/PSI
+│   │   ├── prediction_logger.py# logger JSONL des prédictions
+│   │   └── api.py              # endpoints /metrics, /monitoring/*
 │   └── utils/                  # chemins, device, Grad-CAM, logs, plots
+│
 ├── backend/
-│   ├── app/main.py             # application FastAPI
+│   ├── app/main.py             # application FastAPI + middleware monitoring
 │   ├── app/inference.py        # ONNX Runtime + Grad-CAM
 │   ├── app/settings.py         # configuration par variables d'environnement
 │   └── tests/                  # tests API avec faux modèle ONNX
+│
 ├── frontend/                   # React + Vite + Tailwind
+│
+├── monitoring/                 # configuration du monitoring
+│   ├── prometheus.yml          # config Prometheus (quoi scraper, à quelle fréquence)
+│   └── grafana/                # dashboards Grafana pré-configurés
+│       └── provisioning/
+│           ├── datasources/
+│           └── dashboards/
+│
+├── monitoring_data/            # logs de prédictions (JSONL, ignoré par Git)
+│
 ├── scripts/                    # download, expériences, démo, smoke tests
 ├── tests/                      # anti-fuite, contrat ONNX
 ├── docs/                       # DECISIONS.md, MODEL_CARD.md, SOUTENANCE.md
@@ -764,7 +1002,7 @@ exigence_pdf/
 ├── params.yaml                 # source de vérité de la configuration
 ├── experiments.yaml            # plan des runs R1-R4 et ablations A1-A4
 ├── dvc.yaml                    # pipeline DVC
-└── docker-compose.yml          # frontend + backend + MLflow
+└── docker-compose.yml          # frontend + backend + MLflow + Prometheus + Grafana
 ```
 
 ---
@@ -782,9 +1020,11 @@ curl http://localhost:8000/health
 
 Vérifier que :
 
-- `http://localhost:3000` s'ouvre ;
-- `http://localhost:8000/docs` s'ouvre ;
-- `http://localhost:5000` s'ouvre ;
+- `http://localhost:3000` s'ouvre (frontend) ;
+- `http://localhost:8000/docs` s'ouvre (API) ;
+- `http://localhost:5000` s'ouvre (MLflow) ;
+- `http://localhost:9090` s'ouvre (Prometheus) ;
+- `http://localhost:3001` s'ouvre (Grafana, admin/admin) ;
 - le modèle est chargé (`/health` répond `ok`).
 
 **Attention :** le dépôt ne contient pas les poids. Si
@@ -812,15 +1052,32 @@ Ce n'est pas un vrai détecteur de deepfakes.
 6. **Montrer l'API** : `/docs`, `/health`, `/predict`.
 7. **Montrer MLflow** : expliquer que c'est le suivi des expériences sur le port 5000,
    comparer R1/R2/R3/R4 si les runs existent, montrer les artefacts.
-8. **Expliquer DVC et la CI** : reproductibilité, tests automatiques, versionnement.
-9. **Terminer par les limites** : généralisation, biais, seuil, pas de déploiement
-   critique sans revue humaine.
+8. **Montrer Prometheus** : aller sur `http://localhost:9090`, taper `deepfake_predictions_total`,
+   montrer que les métriques se remplissent au fur et à mesure des prédictions.
+9. **Montrer Grafana** : aller sur `http://localhost:3001` (admin/admin), ouvrir le dashboard
+   "Deepfake Adaptive Fusion - Overview", montrer les graphiques en temps réel.
+10. **Montrer l'orchestration** : expliquer que Prefect lance les étapes du pipeline dans
+    le bon ordre, avec des retries en cas d'erreur. Montrer le code dans
+    `src/orchestration/flows.py`.
+11. **Montrer la CI/CD/CT** : aller sur GitHub Actions, montrer les workflows, expliquer
+    que les tests se lancent automatiquement à chaque push, que le déploiement est
+    automatisé, et que le réentraînement peut se déclencher tout seul.
+12. **Montrer le monitoring de drift** : lancer `curl -X POST http://localhost:8000/monitoring/drift`
+    et expliquer que si le score dépasse 0.3, le modèle est automatiquement réentraîné.
+13. **Expliquer DVC** : reproductibilité, versionnement des données.
+14. **Terminer par les limites** : généralisation, biais, seuil, pas de déploiement
+    critique sans revue humaine.
 
-Phrase de transition utile :
+Phrases de transition utiles :
 
 > « Le port 3000 montre le résultat à l'utilisateur. Le port 8000 fait le calcul.
 > Le port 5000 garde la mémoire scientifique du projet : les expériences, les métriques
-> et les fichiers produits. »
+> et les fichiers produits. Les ports 9090 et 3001 surveillent la santé du système
+> et du modèle en temps réel. »
+
+> « Quand on fait une prédiction, non seulement on obtient un résultat, mais on
+> l'enregistre aussi. Cela nous permet de détecter si les données changent et de
+> savoir quand réentraîner le modèle. C'est ça le monitoring. »
 
 ---
 
@@ -895,18 +1152,87 @@ Pas automatiquement dans cette version. MLflow montre les runs et peut stocker l
 mais le backend charge le fichier ONNX local. La promotion automatique via le registre
 est une évolution prévue, pas le comportement actuel.
 
+### « À quoi sert Prefet ? Pourquoi ne pas utiliser juste DVC ? »
+
+DVC est très bien pour le versionnement des données et lancer les étapes dans le bon ordre.
+Mais il ne gère pas bien les **erreurs complexes** : si une étape échoue, on veut pouvoir
+**réessayer automatiquement** un certain nombre de fois, avec un délai entre les essais.
+Prefect fait exactement ça. Il ajoute aussi une **interface visuelle** pour voir
+l'exécution du pipeline en temps réel, avec les logs de chaque tâche.
+
+**En résumé** : DVC versionne les données et définit le pipeline. Prefect l'exécute avec
+de la robustesse (retries, gestion d'erreurs, observabilité).
+
+### « C'est quoi le data drift ? Pourquoi c'est important ? »
+
+Imaginez que vous entraînez un modèle sur des photos de bonne qualité. En production,
+les utilisateurs envoient des photos floues, mal éclairées, très compressées.
+Le modèle n'a jamais vu ce genre d'images : ses prédictions deviennent moins fiables.
+
+C'est ça le **data drift** : les données en production deviennent différentes de celles
+de l'entraînement. Le modèle ne « sait pas » qu'il devient moins bon. C'est pour ça
+qu'on le surveille avec Evidently AI. Si on détecte un drift, on réentraîne le modèle
+avec les nouvelles données.
+
+### « Comment fonctionne le réentraînement automatique (CT) ? »
+
+C'est un workflow GitHub Actions qui se déclenche quand :
+- le monitoring détecte un data drift important (score > 0.3) ;
+- les métriques du modèle baissent en dessous d'un seuil ;
+- un développeur le lance manuellement.
+
+Le workflow relance le pipeline d'entraînement (via Prefect), vérifie que le nouveau
+modèle est au moins aussi bon que l'ancien, et le déploie automatiquement si tout va bien.
+
+### « À quoi servent Prometheus et Grafana ? »
+
+**Prometheus** est un collecteur de métriques. Il interroge le backend toutes les
+10 secondes via `/metrics` et stocke les chiffres dans une base de données temporelle.
+
+**Grafana** lit ces chiffres et les affiche dans des tableaux de bord. C'est plus facile
+à lire que des lignes de texte. On voit en un coup d'œil si tout va bien :
+- le nombre de requêtes par minute ;
+- le temps de réponse ;
+- l'utilisation CPU et mémoire ;
+- la répartition FAKE/REAL des prédictions.
+
+### « Que se passe-t-il si le déploiement échoue ? »
+
+Le workflow CD a un job de **rollback** automatique. Si le déploiement en production
+échoue, il revient à la version précédente. L'utilisateur ne voit rien.
+
+### « Comment vous assurez-vous que le code est de bonne qualité ? »
+
+Plusieurs niveaux :
+1. **Tests unitaires** : chaque fonction est testée séparément (couverture ≥ 80%)
+2. **Tests d'intégration** : on teste que les composants fonctionnent ensemble
+3. **Lint** : le code doit respecter un style uniforme (black, flake8)
+4. **CI automatique** : à chaque push, les tests se lancent tout seuls sur GitHub
+5. **Smoke test Docker** : on vérifie que la stack complète démarre et répond
+
 ---
 
 ## 18. Résumé final en quelques phrases
 
 Le projet détecte des visages réels ou générés en combinant une analyse spatiale
-et une analyse fréquentielle. Il industrialise ce modèle avec DVC pour les données et
-les poids, MLflow pour le suivi des expériences, ONNX pour l'inférence, FastAPI pour
-l'API, React pour l'interface, Docker pour lancer le tout et GitHub Actions pour la
-qualité.
+et une analyse fréquentielle. Il industrialise ce modèle avec un pipeline MLOps complet :
 
-L'interface **MLflow sur le port 5000** est le tableau de bord des expériences :
-elle montre les runs, les paramètres, les métriques, les courbes et les artefacts.
-Elle ne remplace ni l'application de démonstration sur le port 3000, ni l'API de
-prédiction sur le port 8000. C'est un outil de traçabilité et de comparaison, essentiel
-pour un projet MLOps sérieux.
+- **Git + DVC** pour versionner le code, les données et les poids ;
+- **MLflow** pour suivre les expériences et gérer le registre de modèles ;
+- **Prefect** pour orchestrer le pipeline avec gestion d'erreurs et retries ;
+- **Prometheus + Grafana** pour surveiller le système et le modèle en temps réel ;
+- **Evidently AI** pour détecter quand les données changent (data drift) ;
+- **ONNX** pour l'inférence rapide et portable ;
+- **FastAPI** pour l'API de prédiction ;
+- **React** pour l'interface utilisateur ;
+- **Docker Compose** pour lancer tous les services ensemble ;
+- **GitHub Actions** pour la CI (tests), le CD (déploiement) et le CT (réentraînement).
+
+L'interface **MLflow sur le port 5000** est le tableau de bord des expériences.
+**Prometheus sur le port 9090** collecte les métriques. **Grafana sur le port 3001**
+les affiche dans des graphiques. **Prefect** orchestre le pipeline. **GitHub Actions**
+automatise les tests, le déploiement et le réentraînement.
+
+Tout cela forme un **cycle de vie complet** : du développement du modèle à son
+déploiement en production, en passant par le monitoring et le réentraînement
+automatique quand nécessaire.
