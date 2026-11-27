@@ -5,3 +5,6 @@ docker compose up --build
 
 docker compose restart backend
 docker compose up -d frontend 
+
+git lfs pull 
+
