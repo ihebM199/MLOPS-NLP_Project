@@ -1,0 +1,8 @@
+{
+  "architecture": "AdaptiveFusionDetector",
+  "mode": "fusion",
+  "backbone": "efficientnetv2_rw_s",
+  "image_size": 224,
+  "parameters": 0,
+  "note": "Dummy ONNX and PyTorch checkpoints for CI smoke tests only \u2014 not a trained detector."
+}
