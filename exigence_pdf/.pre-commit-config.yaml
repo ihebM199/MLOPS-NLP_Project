@@ -39,5 +39,6 @@ repos:
           (?x)^(
             archive/.*|
             .*\.ipynb$|
+            deepguard/frontend/package-lock\.json|
             frontend/package-lock\.json
           )$

@@ -1,0 +1,21 @@
+# Prometheus configuration — DeepGuard Django stack.
+# Scrapes the model service (Django) at its /metrics endpoint.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'deepfake-backend'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['deepguard:8000']
+        labels:
+          service: 'deepfake-api'
+          environment: 'production'
+
+  - job_name: 'prometheus'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['localhost:9090']

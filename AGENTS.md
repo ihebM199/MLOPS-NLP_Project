@@ -4,9 +4,18 @@
 - The real project is **`exigence_pdf/`**, not the repo root. Run every command below from
   `/workspaces/MLOPS-NLP_Project/exigence_pdf` (or use `workdir`). The root only holds the
   original notebook, the assignment prompt, and a 4-line README.
-- `models/` and `reports/` are git-ignored and **currently empty: no trained weights ship with the
-  repo**. Only `scripts/make_dummy_model.py` can populate them (dummy ONNX + random PyTorch
-  checkpoint + `sample.jpg` + `model_config.json`); it is **not** a real detector.
+- `models/` and `reports/` are git-ignored (`reports/metrics.json` is now an exception). In this
+  workspace `models/` holds the **real** `deepfake_fusion.onnx` + `AdaptiveFusion_best_model.pth`
+  and `reports/metrics.json` the trained metrics; on a fresh clone use `dvc pull` or
+  `scripts/make_dummy_model.py` (dummy, not a real detector).
+
+## DeepGuard stack (colleague's UI, integrated)
+- `deepguard/` holds the colleague's full React app + Django backend (same API contract as the
+  FastAPI service). It reuses the project's `src/`, `models/` and `reports/metrics.json`.
+- Run it with `docker compose -f deepguard/docker-compose.yml up --build` (UI :8010, Prometheus
+  :9091, Grafana :3002, MLflow :5001) or see `deepguard/README.md` for the two-terminal dev mode.
+- Django exposes `/metrics`, `/monitoring/stats`, `/monitoring/drift` via `src/monitoring`, and
+  records every `/predict`. The original FastAPI stack (`backend/app`, `frontend/`) stays intact.
 
 ## Setup
 - Target **Python 3.11** (CI and Docker use it); `pyproject.toml` targets 3.10/3.11.

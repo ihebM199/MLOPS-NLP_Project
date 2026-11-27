@@ -129,6 +129,27 @@ Sans remote DVC (génère automatiquement les artefacts factices de démonstrati
 | **/monitoring/stats** | http://localhost:8000/monitoring/stats | statistiques des prédictions |
 | **/monitoring/drift** | POST http://localhost:8000/monitoring/drift | déclencher l'analyse de drift |
 
+## Interface DeepGuard (frontend enrichi + backend Django)
+
+Une seconde interface, issue du dépôt du collègue (`deep-guard-deep-fake-`) et
+**intégrée sous `deepguard/`**, apporte la landing page, l'espace analyste et la
+console admin avec CRUD/localStorage. Elle réutilise `src/`, `models/` et
+`reports/metrics.json` du projet, et ajoute le déploiement + le monitoring.
+
+```bash
+# Docker : UI + API Django, Prometheus, Grafana, MLflow
+docker compose -f deepguard/docker-compose.yml up --build
+# -> http://localhost:8010  (Prometheus 9091, Grafana 3002, MLflow 5001)
+```
+
+En local (2 terminaux) : voir [`deepguard/README.md`](deepguard/README.md)
+(`python deepguard/backend/manage.py runserver` + `npm run dev` dans
+`deepguard/frontend`). Comptes démo : `admin@deepguard.io` / `Admin@2026` et
+`demo@deepguard.io` / `Demo@2026`.
+
+L'ancienne stack FastAPI (`backend/app`) + frontend minimal (`frontend/`) reste
+intacte et testée par la CI.
+
 ## Installation détaillée
 
 Prérequis : Python 3.11, Node.js ≥ 20, Docker ≥ 24 + Compose v2, `git`, `dvc`

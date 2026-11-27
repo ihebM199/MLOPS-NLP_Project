@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="DeepGuard - AdaptiveFusion deepfake detection platform: dual-stream ONNX inference, Grad-CAM explainability, analyst and admin workspaces. React frontend + Django backend." />
+    <title>DeepGuard · Deepfake Detection Platform</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233b6bff'/%3E%3Cpath d='M16 7 24 11v7c0 4-3.5 6.5-8 7.5C11.5 24.5 8 22 8 18v-7z' fill='none' stroke='white' stroke-width='2.4'/%3E%3Cpath d='m12.8 16 2.4 2.4 4.4-4.8' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <script>
+      // /analyze page theme (ported from the original repo frontend): apply the
+      // stored `daf-theme` before paint to avoid a flash. Dark by default.
+      try {
+        const stored = localStorage.getItem('daf-theme')
+        const dark = stored ? stored === 'dark' : true
+        document.documentElement.classList.toggle('dark', dark)
+      } catch (_) { /* private mode */ }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

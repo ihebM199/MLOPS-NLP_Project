@@ -14,6 +14,8 @@ mlruns/
 mlartifacts/
 reports/*
 !reports/.gitkeep
+# Small model card / evaluation metadata is safe to version (figures + weights are not).
+!reports/metrics.json
 archive/
 frontend/public/examples/*.jpg
 frontend/public/examples/*.png

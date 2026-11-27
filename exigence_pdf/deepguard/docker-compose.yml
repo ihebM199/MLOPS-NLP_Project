@@ -1,0 +1,104 @@
+# ---------------------------------------------------------------------------
+# DeepGuard stack (colleague's React frontend + Django backend)
+# with deployment + monitoring added.
+#
+#   docker compose -f deepguard/docker-compose.yml up --build
+#
+#   DeepGuard UI + API -> http://localhost:8010
+#   Prometheus         -> http://localhost:9091
+#   Grafana            -> http://localhost:3002  (admin / admin)
+#   MLflow             -> http://localhost:5001
+#
+# Models/reports are mounted read-only from the project root.
+# ---------------------------------------------------------------------------
+name: deepguard
+
+services:
+  deepguard:
+    build:
+      context: ..
+      dockerfile: deepguard/Dockerfile
+    image: deepguard-backend:latest
+    environment:
+      MODEL_PATH: /app/models/deepfake_fusion.onnx
+      PYTORCH_CHECKPOINT_PATH: /app/models/AdaptiveFusion_best_model.pth
+      MODEL_CONFIG_PATH: /app/models/model_config.json
+      METRICS_PATH: /app/reports/metrics.json
+      FRONTEND_PATH: /app/deepguard/frontend/dist/index.html
+      MEDIA_DIR: /app/deepguard/backend/media
+      MONITORING_DATA_DIR: /app/monitoring_data
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://localhost:8010,http://127.0.0.1:5173}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-10}
+      DECISION_THRESHOLD: ${DECISION_THRESHOLD:-0.5}
+      ENABLE_GRADCAM: ${ENABLE_GRADCAM:-1}
+      TORCH_DEVICE: ${TORCH_DEVICE:-cpu}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ../models:/app/models:ro
+      - ../reports:/app/reports:ro
+      - monitoring-data:/app/monitoring_data
+    ports:
+      - "8010:8000"
+    depends_on:
+      mlflow:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9091:9090"
+    volumes:
+      - ../monitoring/prometheus-deepguard.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      deepguard:
+        condition: service_started
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3002:3000"
+    volumes:
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+    restart: unless-stopped
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.17.2
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root /mlflow/artifacts
+    ports:
+      - "5001:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    restart: unless-stopped
+
+volumes:
+  mlflow-data:
+  prometheus-data:
+  grafana-data:
+  monitoring-data:
